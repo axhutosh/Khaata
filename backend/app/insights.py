@@ -62,9 +62,14 @@ def overview(db: Session, user_id: str, period: str = "month") -> dict:
     }
 
 
-def category_breakdown(db: Session, user_id: str) -> list[dict]:
-    rows = (_q(db, user_id)
-            .filter(Transaction.txn_type == "debit", ~Transaction.category.in_(NON_SPEND))
+def category_breakdown(db: Session, user_id: str,
+                       start: dt.date | None = None, end: dt.date | None = None) -> list[dict]:
+    q = _q(db, user_id)
+    if start:
+        q = q.filter(Transaction.txn_date >= start)
+    if end:
+        q = q.filter(Transaction.txn_date <= end)
+    rows = (q.filter(Transaction.txn_type == "debit", ~Transaction.category.in_(NON_SPEND))
             .with_entities(Transaction.category, func.sum(Transaction.amount))
             .group_by(Transaction.category).all())
     rows = sorted(rows, key=lambda r: float(r[1]), reverse=True)
@@ -110,17 +115,48 @@ def recurring(db: Session, user_id: str) -> list[dict]:
     return sorted(out, key=lambda r: r["amount"], reverse=True)
 
 
-def budget_status(db: Session, user_id: str) -> list[dict]:
+def _state(used: float, limit: float) -> str:
+    return "over" if used > limit else ("near" if used > 0.9 * limit else "ok")
+
+
+def budget_status(db: Session, user_id: str, month: str | None = None,
+                  today: dt.date | None = None) -> dict:
+    """Actual vs monthly limit for one calendar month ('YYYY-MM').
+    Defaults to the latest month with transactions, since statements lag the calendar.
+    Projection is linear for the current month; a past month projects to its actual."""
     from .models import Budget
-    budgets = db.query(Budget).filter(Budget.user_id == user_id).all()
-    spent = {c["category"]: c["amount"] for c in category_breakdown(db, user_id)}
-    out = []
-    for b in budgets:
-        used = spent.get(b.category, 0.0)
-        limit = float(b.monthly_limit)
-        out.append({
+    today = today or dt.date.today()
+    if month:
+        start = dt.date.fromisoformat(month + "-01")
+    else:
+        latest = _q(db, user_id).with_entities(func.max(Transaction.txn_date)).scalar()
+        start = (latest or today).replace(day=1)
+    end = (start + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
+
+    if start <= today <= end:
+        scale = end.day / today.day
+    else:
+        scale = 1.0
+
+    spent = {c["category"]: c["amount"] for c in category_breakdown(db, user_id, start, end)}
+    items = []
+    for b in db.query(Budget).filter(Budget.user_id == user_id).all():
+        used, limit = spent.get(b.category, 0.0), float(b.monthly_limit)
+        items.append({
             "category": b.category, "limit": limit, "used": used,
+            "projected": round(used * scale, 2),
             "pct": round(used / limit * 100) if limit else 0,
-            "state": "over" if used > limit else ("near" if used > 0.9 * limit else "ok"),
+            "state": _state(used, limit),
         })
-    return out
+
+    total_limit = sum(i["limit"] for i in items)
+    total_used = sum(i["used"] for i in items)
+    return {
+        "month": f"{start.year}-{start.month:02d}",
+        "items": items,
+        "overall": {
+            "limit": total_limit, "used": total_used,
+            "projected": round(total_used * scale, 2),
+            "state": _state(total_used, total_limit) if total_limit else "ok",
+        },
+    }

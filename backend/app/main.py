@@ -7,7 +7,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .models import User
 from .auth import hash_password
-from .routers import auth, upload, transactions, insights, budgets
+from .routers import auth, upload, uploads, transactions, insights, budgets
 
 
 def seed_user():
@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, upload, transactions, insights, budgets):
+for r in (auth, upload, uploads, transactions, insights, budgets):
     app.include_router(r.router)
 
 

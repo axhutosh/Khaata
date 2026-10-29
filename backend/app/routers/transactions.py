@@ -1,11 +1,11 @@
 import datetime as dt
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import User, Transaction, MerchantRule
+from ..models import User, Transaction
 from ..auth import current_user
-from ..extractor import _clean
+from .. import rules
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -49,22 +49,11 @@ def recategorize(txn_id: str, body: Recategorize,
     txn = db.query(Transaction).filter(
         Transaction.id == txn_id, Transaction.user_id == user.id).first()
     if not txn:
-        return {"error": "not found"}
+        raise HTTPException(status_code=404, detail="Transaction not found")
     txn.category = body.category
 
     if body.apply_to_similar:
-        token = _clean(txn.merchant)
-        rule = db.query(MerchantRule).filter(
-            MerchantRule.user_id == user.id, MerchantRule.token == token).first()
-        if rule:
-            rule.category = body.category
-        else:
-            db.add(MerchantRule(user_id=user.id, token=token,
-                                merchant=txn.merchant, category=body.category))
-        # retro-apply to this user's matching rows
-        db.query(Transaction).filter(
-            Transaction.user_id == user.id, Transaction.merchant == txn.merchant
-        ).update({Transaction.category: body.category})
+        rules.learn(db, user.id, txn.merchant, body.category)
 
     db.commit()
     return {"ok": True}

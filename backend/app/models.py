@@ -33,8 +33,23 @@ class Transaction(Base):
     method: Mapped[str] = mapped_column(String(8))             # UPI / NEFT / ATM ...
     counterparty_kind: Mapped[str] = mapped_column(String(10)) # merchant / person / self / bank
     is_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    upload_id: Mapped[str | None] = mapped_column(ForeignKey("uploads.id"), index=True, nullable=True)
     source_file: Mapped[str] = mapped_column(String)
     txn_hash: Mapped[str] = mapped_column(String, index=True)  # dedupe key
+
+
+class Upload(Base):
+    """One committed statement. Deleting it removes the rows it saved."""
+    __tablename__ = "uploads"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    filename: Mapped[str] = mapped_column(String)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    period_from: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    period_to: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    saved: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    reconciles: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class MerchantRule(Base):

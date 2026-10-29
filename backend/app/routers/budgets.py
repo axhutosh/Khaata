@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
@@ -15,8 +15,9 @@ class BudgetIn(BaseModel):
 
 
 @router.get("")
-def list_budgets(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return ins.budget_status(db, user.id)
+def list_budgets(month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+                 user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return ins.budget_status(db, user.id, month)
 
 
 @router.put("")

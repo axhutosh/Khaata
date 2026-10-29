@@ -41,7 +41,7 @@ khaata-app/
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # app deps + pytest
 cp .env.example .env            # edit SEED_EMAIL / SEED_PASSWORD / SECRET_KEY
 uvicorn app.main:app --reload   # http://localhost:8000  (docs at /docs)
 ```
@@ -58,11 +58,22 @@ npm run dev                     # http://localhost:5173
 
 The Vite dev server proxies `/api/*` to the backend, so sessions are same-origin.
 
+**3. Tests**
+
+```bash
+cd backend
+python -m pytest
+```
+
+Uses a throwaway SQLite DB and the sample PDFs. There are no migrations yet: after a schema
+change, delete `backend/khaata.db` and restart.
+
 ## Try the flow
 
 1. Open http://localhost:5173 and sign in with your seed email/password.
 2. Upload `backend/samples/SBI_sample_locked.pdf` — password **`ASHUT1947`**.
-3. Watch the balance check pass, then land on the Dashboard with real insights.
+3. Review the parsed rows (balance check banner, categories, duplicates) and fix any category —
+   nothing is saved until **Looks good — save**. Then land on the Dashboard.
 4. Try the Daily / Monthly / Yearly toggle, Transactions, Subscriptions, Budgets.
 
 (`SBI_sample.pdf` is the same statement without a password, to test the unlocked path.)
@@ -78,7 +89,6 @@ The Vite dev server proxies `/api/*` to the backend, so sessions are same-origin
 
 - Replace the synthetic statement with a real (redacted) SBI PDF and tighten `extractor.py`
   regexes against its exact layout (date format, wrapped narrations, column widths).
-- Add the explicit Review-before-save step (split `/upload` into `/preview` + `/commit`).
 - Add alerts (large spend, new merchant, bank fees) and CSV/PDF export.
 - When adding a second bank, write a new normaliser in `extractor.py`; everything downstream is bank-agnostic.
 ```

@@ -1,28 +1,26 @@
-"""Upload endpoint: decrypt -> parse -> balance check -> dedupe -> save.
+"""Upload endpoints: decrypt -> parse -> balance check -> review -> dedupe -> save.
 
-Two-step flow so the UI can ask for a password only when needed:
-  POST /upload/preview  -> parse and return rows + balance check (nothing saved)
-  POST /upload/commit   -> save the reviewed rows
-For the scaffold, /upload does both in one call; split later if you want the
-explicit Review step to gate the save.
+  POST /upload/preview  -> parse and return rows + balance check. Saves nothing.
+                           Returns a signed token carrying the parsed rows, so the
+                           PDF and password can be discarded immediately.
+  POST /upload/commit   -> token + the user's category corrections -> save.
 """
 import hashlib
 from decimal import Decimal
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from ..config import settings
 from ..database import get_db
-from ..models import User, Transaction, MerchantRule
+from ..models import User, Transaction, Upload
 from ..auth import current_user
-from .. import extractor
+from .. import extractor, rules
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
-
-def _user_rules(db: Session, user_id: str) -> dict:
-    rules = dict(extractor.SEED_RULES)
-    for r in db.query(MerchantRule).filter(MerchantRule.user_id == user_id).all():
-        rules[r.token] = (r.merchant, r.category)
-    return rules
+_signer = URLSafeTimedSerializer(settings.SECRET_KEY, salt="upload-preview")
+PREVIEW_TTL = 60 * 60  # seconds a preview stays committable
 
 
 def _hash(user_id: str, t) -> str:
@@ -30,8 +28,14 @@ def _hash(user_id: str, t) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-@router.post("")
-async def upload(
+def _saved_hashes(db: Session, user_id: str, hashes: list[str]) -> set[str]:
+    rows = db.query(Transaction.txn_hash).filter(
+        Transaction.user_id == user_id, Transaction.txn_hash.in_(hashes)).all()
+    return {h for (h,) in rows}
+
+
+@router.post("/preview")
+async def preview(
     file: UploadFile = File(...),
     password: str | None = Form(None),
     user: User = Depends(current_user),
@@ -44,10 +48,10 @@ async def upload(
     try:
         pdf_bytes = extractor.decrypt_to_bytes(data, password)
     except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        status = 401 if "password" in str(e) else 422
+        raise HTTPException(status_code=status, detail=str(e))
 
-    rules = _user_rules(db, user.id)
-    parsed = extractor.parse(pdf_bytes, rules)
+    parsed = extractor.parse(pdf_bytes, rules.user_rules(db, user.id))
     if not parsed:
         raise HTTPException(status_code=422, detail="No transactions found. Is this an SBI statement?")
 
@@ -55,28 +59,74 @@ async def upload(
         parsed[0].amount if parsed[0].txn_type == "credit" else -parsed[0].amount))
     check = extractor.balance_check(parsed, Decimal(str(opening)))
 
-    saved, duplicates = 0, 0
+    hashes = [_hash(user.id, t) for t in parsed]
+    saved, seen, rows = _saved_hashes(db, user.id, hashes), set(), []
+    for t, h in zip(parsed, hashes):
+        rows.append({**t.as_dict(), "duplicate": h in saved or h in seen})
+        seen.add(h)
+
+    token = _signer.dumps({
+        "user_id": user.id, "filename": file.filename,
+        "rows": [t.as_dict() for t in parsed], "reconciles": check["reconciles"],
+    })
+    return {
+        "token": token, "filename": file.filename, "balance_check": check,
+        "rows": rows, "parsed": len(rows), "duplicates": sum(r["duplicate"] for r in rows),
+        "categories": extractor.CATEGORIES,
+    }
+
+
+class CommitIn(BaseModel):
+    token: str
+    corrections: dict[str, str] = {}   # merchant -> corrected category
+
+
+@router.post("/commit")
+def commit(body: CommitIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    try:
+        payload = _signer.loads(body.token, max_age=PREVIEW_TTL)
+    except SignatureExpired:
+        raise HTTPException(status_code=410, detail="This preview expired. Upload the statement again.")
+    except BadSignature:
+        raise HTTPException(status_code=400, detail="Invalid preview token.")
+    if payload["user_id"] != user.id:
+        raise HTTPException(status_code=403, detail="This preview belongs to another user.")
+
+    parsed = [extractor.ParsedTxn.from_dict(d) for d in payload["rows"]]
+    merchants = {t.merchant for t in parsed}
+    for merchant, category in body.corrections.items():
+        if merchant not in merchants or not category.strip():
+            raise HTTPException(status_code=422, detail=f"Bad correction for {merchant!r}.")
     for t in parsed:
-        h = _hash(user.id, t)
-        exists = db.query(Transaction).filter(
-            Transaction.user_id == user.id, Transaction.txn_hash == h).first()
-        if exists:
-            duplicates += 1
+        if t.merchant in body.corrections:
+            t.category = body.corrections[t.merchant].strip()
+
+    upload = Upload(user_id=user.id, filename=payload["filename"], reconciles=payload["reconciles"],
+                    period_from=min(t.txn_date for t in parsed),
+                    period_to=max(t.txn_date for t in parsed))
+    db.add(upload)
+    db.flush()
+
+    hashes = [_hash(user.id, t) for t in parsed]
+    skip = _saved_hashes(db, user.id, hashes)
+    for t, h in zip(parsed, hashes):
+        if h in skip:
+            upload.duplicates += 1
             continue
+        skip.add(h)
         db.add(Transaction(
             user_id=user.id, txn_date=t.txn_date, amount=t.amount, txn_type=t.txn_type,
             balance=t.balance, raw_narration=t.raw_narration, merchant=t.merchant,
             category=t.category, method=t.method, counterparty_kind=t.counterparty_kind,
-            source_file=file.filename, txn_hash=h,
+            upload_id=upload.id, source_file=upload.filename, txn_hash=h,
         ))
-        saved += 1
+        upload.saved += 1
+    db.flush()
 
-    if not user.onboarded:
-        user.onboarded = True
+    # corrections become rules for future uploads and retro-apply to older rows
+    for merchant, category in body.corrections.items():
+        rules.learn(db, user.id, merchant, category.strip())
+
+    user.onboarded = True
     db.commit()
-
-    return {
-        "saved": saved, "duplicates": duplicates, "parsed": len(parsed),
-        "balance_check": check,
-        "rows": [t.as_dict() for t in parsed],
-    }
+    return {"upload_id": upload.id, "saved": upload.saved, "duplicates": upload.duplicates}

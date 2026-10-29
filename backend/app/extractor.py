@@ -26,6 +26,8 @@ def is_encrypted(path_or_bytes) -> bool:
             return False
     except pikepdf.PasswordError:
         return True
+    except pikepdf.PdfError:
+        return False  # not a readable PDF; decrypt_to_bytes reports it
 
 
 def decrypt_to_bytes(path_or_bytes, password: str | None) -> bytes:
@@ -39,6 +41,8 @@ def decrypt_to_bytes(path_or_bytes, password: str | None) -> bytes:
             return buf.getvalue()
     except pikepdf.PasswordError:
         raise ValueError("Wrong or missing password for this PDF.")
+    except pikepdf.PdfError:
+        raise ValueError("This file isn't a readable PDF.")
 
 
 # --------------------------------------------------------------------------- #
@@ -62,6 +66,11 @@ class ParsedTxn:
         d["amount"] = f"{self.amount:.2f}"
         d["balance"] = f"{self.balance:.2f}"
         return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ParsedTxn":
+        return cls(**{**d, "txn_date": dt.date.fromisoformat(d["txn_date"]),
+                      "amount": Decimal(d["amount"]), "balance": Decimal(d["balance"])})
 
 
 # --------------------------------------------------------------------------- #
@@ -113,6 +122,13 @@ _UPI = re.compile(r"TRANSFER-UPI/(?:DR|CR)/\d+/([^/]+)/[^/]*/([^/]+)/", re.I)
 _NEFT = re.compile(r"TRANSFER-NEFT\*\d+\*([^*]+)\*", re.I)
 _PERSON_VPA = re.compile(r"@ok(sbi|hdfcbank|axis|icici)$", re.I)
 
+# every category the pipeline can assign; the Review screen offers these
+CATEGORIES = [
+    "Food & Dining", "Groceries", "Shopping", "Bills & Utilities", "Entertainment",
+    "Transport", "Insurance", "Cash", "Bank Fees",
+    "Investments", "Income", "Cashback", "Transfer · Person", "Uncategorised",
+]
+
 # seed dictionary: cleaned-token -> (merchant, category). Grows from user corrections.
 SEED_RULES = {
     "swiggy": ("Swiggy", "Food & Dining"),
@@ -159,6 +175,16 @@ def _match(name: str, rules: dict) -> tuple[str, str]:
 def normalise(desc: str, rules: dict | None = None) -> tuple[str, str, str, str]:
     """Return (method, merchant, category, counterparty_kind)."""
     rules = rules or SEED_RULES
+    method, merchant, category, kind = _normalise(desc, rules)
+    # a rule keyed on the cleaned merchant name (what a user correction writes) has the
+    # final say, whichever narration token or branch produced that merchant
+    hit = rules.get(_clean(merchant))
+    if hit and hit[0] == merchant:
+        category = hit[1]
+    return method, merchant, category, kind
+
+
+def _normalise(desc: str, rules: dict) -> tuple[str, str, str, str]:
     d = desc.strip()
     up = d.upper()
 

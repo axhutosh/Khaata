@@ -90,7 +90,7 @@ One fine-grained table is the source of truth; every insight is a query over it.
 | source_file | text | Which upload it came from |
 | txn_hash | text | For duplicate detection across uploads; unique per (user_id, txn_hash) |
 
-Supporting tables: `users` (email, password_hash, `onboarded` flag that routes first-run vs returning), `merchant_rules` (user_id, narration token → merchant + category, grows from corrections), `budgets` (user_id, category, monthly_limit; one per category).
+Supporting tables: `users` (email, password_hash, `onboarded` flag that routes first-run vs returning), `uploads` (one per committed statement: filename, period, saved/duplicate counts, whether it balanced; `transactions.upload_id` points here), `merchant_rules` (user_id, narration token → merchant + category, grows from corrections), `budgets` (user_id, category, monthly_limit; one per category).
 
 **Duplicate key.** `txn_hash = sha256(user_id | txn_date | amount | type | raw_narration)`. SBI narrations carry a reference number, so genuine repeats normally differ; two rows that are byte-identical will collapse into one (see §9).
 
@@ -145,6 +145,8 @@ Since it's one user, the merchant set is small and repetitive, so the dictionary
 - **Time toggle:** Daily/Monthly/Yearly lives on the Dashboard only; Transactions uses a date-range filter instead.
 - **Onboarding:** Upload is a one-time first-run flow; returning users land on the Dashboard and upload via a secondary action.
 - **Privacy:** original PDF and password discarded after parsing; stored transaction data encrypted at rest.
+- **Encryption at rest (decided 2026-10-30):** column-level encryption of `raw_narration` (it holds VPAs, account fragments, reference numbers and people's names) with Fernet, via a SQLAlchemy type, key from a `DATA_KEY` env var that never enters the DB. `merchant`, `category`, `amount` and dates stay plaintext so SQL can group and sum them; narration search moves into Python (fine at one user's volume). Chosen over SQLCipher because it builds cleanly on Windows and carries over unchanged to Postgres. Pair with OS disk encryption (BitLocker) for the DB file itself.
+- **Uploads:** one PDF per upload in v1 (multi-month statements already cover history). Any upload can be deleted, removing exactly the rows it saved.
 
 ## 8. Build phases
 
@@ -166,34 +168,32 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | --- | --- | --- | --- |
 | Email/password login + session | 1 | ✅ Built | Single seeded user from `.env` |
 | Google sign-in | 1 | ❌ Not built | |
-| Upload + decrypt (password once, never stored) | 1 | ✅ Built | Single file per upload; PRD asks for multiple |
-| SBI extractor (table read + narration normaliser) | 1 | 🟡 Partial | Tuned to synthetic layout; needs a real SBI PDF. Opening balance read from page 1 only |
+| Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7) |
+| SBI extractor (table read + narration normaliser) | 1 | 🟡 Partial | Tuned to synthetic layout; waiting on a real redacted SBI PDF. Opening balance read from page 1 only |
 | Balance check | 1 | ✅ Built | |
-| Review-before-save screen | 1 | ❌ Not built | `/upload` parses **and saves** in one call; needs `/upload/preview` + `/upload/commit` |
+| Review-before-save screen | 1 | ✅ Built | `/upload/preview` saves nothing and returns a signed, 1-hour token carrying the parsed rows; `/upload/commit` takes the token + per-merchant corrections. Duplicates shown greyed, uncategorised flagged |
 | Rules + fuzzy categorisation | 1 | ✅ Built | ~17 seed rules (PRD target ~100); `rapidfuzz` threshold 88 |
 | Duplicate detection | 1 | ✅ Built | See duplicate key in §5 |
 | Dashboard daily/monthly/yearly + KPIs, donut, top merchants | 1 | ✅ Built | |
 | Transactions date-range + search + category filter | 2 | ✅ Built | |
-| Learn from corrections (rule + retro-apply) | 3 | ✅ Built | `PATCH /transactions/{id}/category` |
+| Learn from corrections (rule + retro-apply) | 3 | ✅ Built | From Review corrections and `PATCH /transactions/{id}/category`. A merchant-keyed rule overrides the narration-token match, so it also sticks for people, ATM and fees |
 | Recurring detection | 2 | 🟡 Partial | 2+ months, ≤40% amount spread. Missing: next-charge date, price-increase flag, real cadence (always "Monthly"); `is_recurring` column never set |
-| Budgets | 2 | 🟡 Partial | Set/list works, but **compares against all-time spend, not the current month**. No month-end projection |
+| Budgets | 2 | ✅ Built | Per-month actuals (default: latest month with data), overall total, linear month-end projection for the current month |
 | Alerts ("what Khaata noticed") | 2 | ❌ Not built | |
 | Export (CSV / PDF) | 2 | ❌ Not built | |
-| Stored data encrypted at rest | — | ❌ Not built | Plain SQLite today |
+| Stored data encrypted at rest | — | ❌ Not built | Approach decided (§7); plain SQLite today |
 | LLM fallback, merchant icons, second bank | 3 | ❌ Not built | |
-| Automated tests | — | ❌ None | |
+| Delete an upload and its rows | — | ✅ Built | `DELETE /uploads/{id}`; resets onboarding if no history is left |
+| Automated tests | — | ✅ Started | `backend/tests/` — extractor, preview/commit, dedupe, corrections, delete, budgets (pytest, sample PDFs) |
 
-**API surface today:** `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` · `POST /upload` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets`, `PUT /budgets` · `GET /health`.
+**API surface today:** `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` · `POST /upload/preview`, `POST /upload/commit` · `GET /uploads`, `DELETE /uploads/{id}` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets?month=YYYY-MM`, `PUT /budgets` · `GET /health`.
 
 **Known issues**
 
-- Budgets use all-time category totals instead of this month's.
-- Recategorising a missing transaction returns 200 `{"error": ...}` instead of 404.
+- No migrations yet (tables come from `create_all`). Schema changes need the local `khaata.db` deleted; add Alembic before real data matters.
 - Byte-identical transactions on the same day dedupe into one.
 - The chart palette in `DESIGN.md` has no colours for Income, Investments, Bank Fees, Cashback or Transfer · Person.
 
 **Open questions**
 
-- Is uploading one file at a time acceptable for v1, or must onboarding take several files at once?
-- Encryption at rest: SQLCipher, column-level encryption, or postpone until moving to Postgres?
-- Should there be a way to delete an upload and its rows (useful while the extractor is still being tuned)?
+- None open. Resolved 2026-10-30: one file per upload; uploads are deletable; encryption approach in §7.

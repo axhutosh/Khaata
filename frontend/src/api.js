@@ -22,12 +22,16 @@ export const api = {
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req("/auth/logout", { method: "POST" }),
 
-  upload: (file, password) => {
+  preview: (file, password) => {
     const fd = new FormData();
     fd.append("file", file);
     if (password) fd.append("password", password);
-    return req("/upload", { method: "POST", body: fd });
+    return req("/upload/preview", { method: "POST", body: fd });
   },
+  commit: (token, corrections) =>
+    req("/upload/commit", { method: "POST", body: JSON.stringify({ token, corrections }) }),
+  uploads: () => req("/uploads"),
+  deleteUpload: (id) => req(`/uploads/${id}`, { method: "DELETE" }),
 
   overview: (period = "month") => req(`/insights/overview?period=${period}`),
   recurring: () => req("/insights/recurring"),
@@ -40,10 +44,17 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ category, apply_to_similar: true }),
     }),
-  budgets: () => req("/budgets"),
+  budgets: (month) => req(`/budgets${month ? "?month=" + month : ""}`),
   setBudget: (category, monthly_limit) =>
     req("/budgets", { method: "PUT", body: JSON.stringify({ category, monthly_limit }) }),
 };
 
 export const inr = (n) =>
   "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+
+// exact to the paisa, for reconciliation figures
+export const inrExact = (n) =>
+  "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export const monthLabel = (ym) =>
+  new Date(ym + "-01T00:00:00").toLocaleString("en-IN", { month: "long", year: "numeric" });

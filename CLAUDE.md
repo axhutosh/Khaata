@@ -32,8 +32,10 @@ decision in the PRD, flag it rather than silently diverging.
   - `app/extractor.py` — the bank-specific pipeline: decrypt → parse → categorise → balance-check.
     **Adding a bank = a new narration normaliser + table reader here.** Everything downstream is bank-agnostic.
   - `app/insights.py` — all aggregation (derived live from the `transactions` table).
-  - `app/models.py` — `User`, `Transaction`, `MerchantRule`, `Budget`.
-  - `app/routers/` — auth, upload, transactions, insights, budgets.
+  - `app/models.py` — `User`, `Upload`, `Transaction`, `MerchantRule`, `Budget`.
+  - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply).
+  - `app/routers/` — auth, upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
+  - `tests/` — pytest against the sample PDFs; run `python -m pytest` from `backend/`.
 - `frontend/` — Vite + React. API client in `src/api.js` (proxied `/api` → backend).
   Pages in `src/pages/`, shared shell in `src/components/Shell.jsx`, tokens in `src/styles.css`.
 
@@ -50,16 +52,16 @@ decision in the PRD, flag it rather than silently diverging.
 
 Phase-1 spine is built and verified against a **synthetic** SBI statement
 (`backend/samples/SBI_sample_locked.pdf`, password `ASHUT1947`): auth, upload+decrypt,
-extractor, transactions, insights, recurring, budgets, dedupe all work; balance check
-reconciles to ₹0.00. The per-requirement status table, known issues and open questions
+Review-before-save (preview/commit), extractor, transactions, insights, recurring, per-month
+budgets, dedupe and upload deletion all work; balance check reconciles to ₹0.00. The per-requirement status table, known issues and open questions
 live in **`docs/PRD.md` §9** — keep it current as things ship.
 
 **Next up (Phase-1 finish):**
-1. Replace the synthetic statement with a real (redacted) SBI PDF and tighten
-   `app/extractor.py` regexes to its exact layout (date format, wrapped narrations, column widths).
-2. Add the explicit Review-before-save step: split `/upload` into `/upload/preview` (parse,
-   return rows, save nothing) and `/upload/commit` (save reviewed rows). The Review screen gates the save.
-3. Then Phase 2 per the PRD (alerts, export, richer views).
+1. Replace the synthetic statement with a real (redacted) SBI PDF (the user will share one) and
+   tighten `app/extractor.py` regexes to its exact layout (date format, wrapped narrations, column
+   widths). Add it as a test fixture.
+2. Encryption at rest for `raw_narration` (approach locked in PRD §7) — add Alembic first.
+3. Then Phase 2 per the PRD (alerts, export, recurring next-charge + price-increase, Google sign-in).
 
 ## Run
 
