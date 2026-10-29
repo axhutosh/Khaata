@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# backend/.env; real environment variables win over it
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 class Settings:
