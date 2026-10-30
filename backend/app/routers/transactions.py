@@ -34,14 +34,15 @@ def list_txns(
         query = query.filter(Transaction.txn_type == type)
     if kind:
         query = query.filter(Transaction.counterparty_kind == kind)
-    if q:
-        like = f"%{q}%"
-        query = query.filter(Transaction.merchant.ilike(like) | Transaction.raw_narration.ilike(like))
     # newest first; within a day, latest statement row first (so balances read top-down)
     query = query.order_by(Transaction.txn_date.desc())
     if db.get_bind().dialect.name == "sqlite":
         query = query.order_by(text("transactions.rowid DESC"))
-    rows = query.limit(limit).all()
+    if q:  # narrations are encrypted, so match after decrypting (fine at one person's volume)
+        needle = q.lower()
+        rows = [r for r in query.all() if needle in r.merchant.lower() or needle in r.raw_narration.lower()][:limit]
+    else:
+        rows = query.limit(limit).all()
     return [{
         "id": r.id, "date": r.txn_date.isoformat(), "merchant": r.merchant,
         "raw": r.raw_narration, "category": r.category, "method": r.method,

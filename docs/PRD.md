@@ -183,7 +183,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | Budgets | 2 | ✅ Built | Per-month actuals (default: latest month with data), overall total, linear month-end projection for the current month |
 | Alerts ("what Khaata noticed") | 2 | ❌ Not built | |
 | Export (CSV / PDF) | 2 | ❌ Not built | |
-| Stored data encrypted at rest | — | ❌ Not built | Approach decided (§7); plain SQLite today |
+| Stored data encrypted at rest | — | ✅ Built | `raw_narration` encrypted with Fernet (`app/crypto.py`, `DATA_KEY`, rotation via comma-separated keys); dedupe hash is a keyed HMAC; narration search runs after decryption. Existing rows migrated on startup with a backup. Merchant names (which include people's names for P2P) stay plaintext for grouping. Alembic still not added |
 | LLM fallback, merchant icons, second bank | 3 | ❌ Not built | |
 | Delete an upload and its rows | — | ✅ Built | `DELETE /uploads/{id}`; resets onboarding if no history is left |
 | Automated tests | — | ✅ Started | `backend/tests/` — extractor, preview/commit, dedupe, corrections, delete, budgets (pytest, sample PDFs) |

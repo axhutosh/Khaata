@@ -8,6 +8,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .models import User
 from .auth import current_user
+from . import crypto
 from .security import OriginCheck, SecurityHeaders
 from .routers import auth, upload, uploads, transactions, insights, budgets
 from .routers.auth import NO_PASSWORD
@@ -37,14 +38,16 @@ def migrate_data():
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"))
         # sign-in is Google only: drop any stored password hash so no password route exists
         conn.execute(text("UPDATE users SET password_hash = :p WHERE password_hash != :p"), {"p": NO_PASSWORD})
+        # narrations encrypted at rest; also re-encrypts after a key rotation
+        crypto.migrate(conn, settings.DATABASE_URL)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.check()  # first: the migration below needs DATA_KEY
     Base.metadata.create_all(bind=engine)
     migrate_data()
     seed_user()
-    settings.check()
     yield
 
 

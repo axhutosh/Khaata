@@ -5,7 +5,6 @@
                            PDF and password can be discarded immediately.
   POST /upload/commit   -> token + the user's category corrections -> save.
 """
-import hashlib
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel
@@ -14,7 +13,7 @@ from ..config import settings
 from ..database import get_db
 from ..models import User, Transaction, Upload
 from ..auth import current_user
-from .. import extractor, rules
+from .. import crypto, extractor, rules
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -23,8 +22,7 @@ PREVIEW_TTL = 60 * 60  # seconds a preview stays committable
 
 
 def _hash(user_id: str, t) -> str:
-    raw = f"{user_id}|{t.txn_date}|{t.amount}|{t.txn_type}|{t.raw_narration}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:24]
+    return crypto.keyed_hash(crypto.dedupe_message(user_id, t.txn_date, t.amount, t.txn_type, t.raw_narration))
 
 
 def _saved_hashes(db: Session, user_id: str, hashes: list[str]) -> set[str]:

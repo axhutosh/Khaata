@@ -2,6 +2,7 @@ import uuid, datetime as dt
 from sqlalchemy import String, Numeric, Date, DateTime, Boolean, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
+from .crypto import EncryptedText
 
 
 def _uuid() -> str:
@@ -28,7 +29,7 @@ class Transaction(Base):
     amount: Mapped[float] = mapped_column(Numeric(14, 2))      # positive magnitude
     txn_type: Mapped[str] = mapped_column(String(6))           # debit / credit
     balance: Mapped[float] = mapped_column(Numeric(14, 2))
-    raw_narration: Mapped[str] = mapped_column(String)
+    raw_narration: Mapped[str] = mapped_column(EncryptedText)  # encrypted at rest (app/crypto.py)
     merchant: Mapped[str] = mapped_column(String, index=True)
     category: Mapped[str] = mapped_column(String, index=True)
     method: Mapped[str] = mapped_column(String(8))             # UPI / NEFT / ATM ...

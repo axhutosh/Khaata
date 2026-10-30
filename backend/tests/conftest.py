@@ -11,6 +11,9 @@ os.environ["SECRET_KEY"] = "test-secret"
 os.environ["SEED_EMAIL"] = "me@khaata.in"
 os.environ["ALLOWED_EMAILS"] = "me@khaata.in"
 os.environ["GOOGLE_CLIENT_ID"] = "test-client.apps.googleusercontent.com"
+from cryptography.fernet import Fernet  # noqa: E402
+TEST_DATA_KEY = Fernet.generate_key().decode()
+os.environ["DATA_KEY"] = TEST_DATA_KEY
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402

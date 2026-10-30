@@ -94,6 +94,14 @@ change, delete `backend/khaata.db` and restart.
 - **Throttling**: 5 failed Google sign-ins from one address in 15 minutes pauses sign-in from
   that address for the rest of the window (other addresses, including yours, are unaffected).
 - **Uploads**: capped at `MAX_UPLOAD_MB`; the statement password is used once and never stored.
+- **Encryption at rest**: bank narrations (UPI IDs, account fragments, names, reference numbers)
+  are stored as Fernet tokens (AES + HMAC) keyed by `DATA_KEY` in `.env`, never in the database;
+  the duplicate-detection hash is an HMAC under the same key. Amounts, dates, merchants and
+  categories stay readable so insights work. **Back up `DATA_KEY`** — without it the narrations
+  can't be recovered. Rotate by putting a new key first (`DATA_KEY=new,old`) and restarting;
+  startup re-encrypts everything, then remove the old key. Startup also encrypts any older
+  plaintext rows, saving a database backup first (that backup is plaintext — delete it once
+  you've checked the app).
 - **Responses**: `no-store`, `nosniff`, `DENY` framing, a locked-down CSP. `/docs` is off in production.
 - **Production** (`ENV=production`) refuses to start with the placeholder `SECRET_KEY`, no
   `GOOGLE_CLIENT_ID`, or non-HTTPS cookies.

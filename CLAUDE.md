@@ -37,6 +37,7 @@ decision in the PRD, flag it rather than silently diverging.
   - `app/models.py` — `User`, `Upload`, `Transaction`, `MerchantRule`, `Budget`.
   - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply), `reclassify()` saved rows.
   - `app/names.py` — person-vs-business signals (first names, surnames, business words, merchant-VPA hints) for P2P detection.
+  - `app/crypto.py` — `raw_narration` encrypted at rest (Fernet, `DATA_KEY`), keyed dedupe hash, startup migration/rotation. Never filter `raw_narration` in SQL — it's ciphertext.
   - `app/security.py` — security headers, CSRF origin check, login throttle. `app/auth.py` — sessions.
   - `app/routers/` — auth (Google only), upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
     **New routers go under `dependencies=[Depends(current_user)]` in `main.py`**; `tests/test_security.py` fails any route that answers without a session.
@@ -66,7 +67,7 @@ live in **`docs/PRD.md` §9** — keep it current as things ship.
    NEFT/IMPS/ATM/ACH/charges/interest to finish it. Real layout facts are pinned in
    `tests/test_sbi_layout.py`. Real statements go in `backend/samples/real/` (git-ignored; the
    repo is **public**), masked with `tools/mask_statement.py`; only read the `.masked.*` files.
-2. Encryption at rest for `raw_narration` (approach locked in PRD §7) — add Alembic first.
+2. ~~Encryption at rest~~ done (`app/crypto.py`, `DATA_KEY`). Still to do: Alembic migrations (schema fixes live in `main.migrate_data` for now).
 3. Then Phase 2 per the PRD (alerts, export, recurring next-charge + price-increase, Google sign-in).
 
 ## Run

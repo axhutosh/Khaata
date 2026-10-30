@@ -37,6 +37,9 @@ class Settings:
     def may_sign_in(self, email: str) -> bool:
         return self.OPEN_SIGNUP or email in self.ALLOWED_EMAILS or email == self.SEED_EMAIL.lower()
 
+    # Encrypts stored bank narrations (app/crypto.py). Required. Comma-separate to rotate.
+    DATA_KEY: str = os.getenv("DATA_KEY", "").strip()
+
     SESSION_MAX_AGE: int = int(os.getenv("SESSION_MAX_AGE", str(7 * 24 * 3600)))  # seconds
     SESSION_SECURE: bool = _bool("SESSION_SECURE", ENV == "production")  # cookie only over HTTPS
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "15"))
@@ -51,6 +54,9 @@ class Settings:
         if self.SECRET_KEY in PLACEHOLDER_SECRETS or len(self.SECRET_KEY) < 32:
             problems.append("SECRET_KEY is a placeholder or shorter than 32 characters "
                             "(generate one: python -c \"import secrets; print(secrets.token_urlsafe(48))\")")
+        if not self.DATA_KEY:  # without it nothing can be stored or read: refuse in every mode
+            raise RuntimeError("DATA_KEY is not set. Generate one and add it to backend/.env: "
+                               "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
         if not self.GOOGLE_CLIENT_ID:
             problems.append("GOOGLE_CLIENT_ID is empty, so nobody can sign in (see README: Google sign-in)")
         if self.production and not self.SESSION_SECURE:
