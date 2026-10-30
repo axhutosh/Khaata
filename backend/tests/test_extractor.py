@@ -47,7 +47,7 @@ def test_parsed_txn_round_trips():
     ("ATM WDL ATM CASH 1234 MG ROAD", "ATM", "Cash", "self"),
     ("SMS CHARGES FOR QTR", "FEE", "Bank Fees", "bank"),
     ("TO TRANSFER-UPI/DR/412345678901/BUNDL TECHNOLOGIES/YESB/swiggy@ybl/Payment", "UPI", "Food & Dining", "merchant"),
-    ("TO TRANSFER-UPI/DR/412345678902/RAHUL SHARMA/SBIN/rahul@oksbi/", "UPI", "Transfer · Person", "person"),
+    ("TO TRANSFER-UPI/DR/412345678902/RAHUL SHARMA/SBIN/rahul@oksbi/", "UPI", "P2P Transfer", "person"),
 ])
 def test_normalise(desc, method, category, kind):
     m, _merchant, c, k = extractor.normalise(desc)

@@ -96,3 +96,7 @@ td { padding: 13px 14px; font-size: 14px; border-top: 1px solid #f2f1ec; }
 }
 .chip:hover { border-color: #b9b7af; color: var(--ink); }
 .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* dashboard */
+.grid-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; margin-bottom: 16px; }

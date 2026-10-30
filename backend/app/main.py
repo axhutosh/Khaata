@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -21,9 +22,18 @@ def seed_user():
         db.close()
 
 
+def migrate_data():
+    """Small in-place data fixes until Alembic arrives."""
+    with engine.begin() as conn:
+        for table in ("transactions", "merchant_rules", "budgets"):  # category renamed
+            conn.execute(text(f"UPDATE {table} SET category = 'P2P Transfer' "
+                              "WHERE category = 'Transfer · Person'"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_data()
     seed_user()
     yield
 

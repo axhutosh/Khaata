@@ -51,7 +51,7 @@ Defined in `frontend/src/styles.css` as CSS variables.
 | Investments | `#2F6F5E` |
 | Income | `#0E7C66` |
 | Cashback | `#9A7BC4` |
-| Transfer · Person | `#A3A7AE` |
+| P2P Transfer | `#9F3A9C` |
 | Uncategorised | `#B0B4BB` |
 
 The palette lives in `frontend/src/categories.jsx`; keep it in step with `CATEGORIES` in

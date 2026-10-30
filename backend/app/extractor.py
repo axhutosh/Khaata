@@ -16,6 +16,8 @@ from html.parser import HTMLParser
 import pikepdf
 import pdfplumber
 
+from . import names
+
 
 # --------------------------------------------------------------------------- #
 # 1. Decrypt
@@ -285,7 +287,9 @@ def rows_from_tables(tables: list[list[list[str | None]]]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # "UPI/DR/<ref>/<payee name>/<payee bank>/<payee VPA>/<note>", with or without a
 # "TO TRANSFER-" / "WDL TFR" lead-in
-_UPI = re.compile(r"UPI/(?:DR|CR)/\d+/(?P<name>[^/]*)/(?P<bank>[^/]*)/(?P<vpa>[^/]*)", re.I)
+_UPI = re.compile(r"UPI/(?:DR|CR)/\d+/(?P<name>[^/]*)/(?P<bank>[^/]*)/(?P<vpa>[^/]*)(?:/(?P<note>[^/]*))?",
+                  re.I)
+P2P = "P2P Transfer"
 _NEFT = re.compile(r"TRANSFER-NEFT\*\d+\*([^*]+)\*", re.I)
 # Google Pay personal handles, when the statement shows the full VPA
 _PERSON_VPA = re.compile(r"@ok(sbi|hdfcbank|axis|icici)$", re.I)
@@ -298,7 +302,7 @@ CATEGORIES = [
     "Food & Dining", "Groceries", "Shopping", "Bills & Utilities", "Health & Medical",
     "Transport", "Fuel", "Travel", "Entertainment", "Personal Care", "Education",
     "Rent & Housing", "Insurance", "Cash", "Bank Fees",
-    "Investments", "Income", "Cashback", "Transfer · Person", "Uncategorised",
+    "Investments", "Income", "Cashback", P2P, "Uncategorised",
 ]
 
 # Last rule layer before giving up: words that say what a small business sells. Most UPI
@@ -429,33 +433,49 @@ def normalise(desc: str, rules: dict | None = None) -> tuple[str, str, str, str]
     return method, merchant, category, kind
 
 
-def _upi_kind(vpa: str) -> str:
-    """Person or merchant, from the payee VPA. Real SBI statements drop the '@handle',
-    leaving only the local part; a 10-digit phone number there is a person. Anything else
-    counts as a merchant, so ambiguous payments stay in spend rather than vanishing into
-    transfers."""
-    local, _, handle = vpa.strip().partition("@")
-    if handle:
-        return "person" if _PERSON_VPA.search(vpa.strip()) else "merchant"
-    return "person" if re.fullmatch(r"\d{10}", local) else "merchant"
+def payee_kind(name: str, vpa: str) -> str:
+    """'person' or 'merchant' for a UPI payee. There's no merchant flag in a statement, so
+    score the evidence: business words, a merchant-QR/gateway VPA or digits in the name
+    say merchant; a title, a known first name or surname, or a phone-number VPA say person.
+    Unsure counts as merchant, so a payment stays in spend rather than vanishing into P2P."""
+    local, _, handle = vpa.strip().lower().partition("@")
+    if handle:  # full VPA shown (older layouts): Google Pay personal handles are people
+        if _PERSON_VPA.search(vpa.strip()):
+            return "person"
+    raw = name.lower()
+    tokens = re.findall(r"[a-z]+", raw)
+    if ("&" in raw or any(t in names.BUSINESS_WORDS for t in tokens)
+            or re.search(r"\d", raw) or _keyword_category(name)
+            or re.fullmatch(r"[a-z]{1,2}\d{6,}", local)
+            or any(h in local for h in names.MERCHANT_VPA_HINTS)):
+        return "merchant"
+    score = names.person_score(tokens)
+    if re.fullmatch(r"\d{10}", local):
+        score += 2
+    return "person" if score >= 2 else "merchant"
 
 
 def _upi(d: str, rules: dict) -> tuple[str, str, str, str] | None:
     m = _UPI.search(d)
     if not m:
         return None
-    name, vpa = m.group("name").strip(), m.group("vpa").strip()
-    kind = _upi_kind(vpa)
-    if kind == "person":
-        return "UPI", (name or vpa).title(), "Transfer · Person", kind
+    name, vpa, note = m.group("name").strip(), m.group("vpa").strip(), (m.group("note") or "").strip()
     if not name or name.isdigit():  # some payees show only a number; fall back to the VPA
         name = vpa or "UPI payment"
     merch, cat = _match(name, rules)
-    if cat == "Uncategorised" and vpa:  # "netflix.pg", "zomato-order" ...
+    if cat != "Uncategorised":  # a known merchant, a trade keyword, or a rule the user taught
+        return "UPI", merch, cat, "person" if cat == P2P else "merchant"
+
+    kind = payee_kind(name, vpa)
+    # the remark the payer typed ("rent", "milk", "fees") beats the generic person/shop split
+    from_note = _keyword_category(note) if note.upper() not in ("UPI", "NA", "") else None
+    if kind == "person":
+        return "UPI", name.title(), from_note or P2P, kind
+    if vpa:  # "netflix.pg", "zomato-order" ...
         hit = _match(vpa.replace(".", " ").replace("-", " "), rules)
         if hit[1] != "Uncategorised":
-            merch, cat = hit
-    return "UPI", merch, cat, kind
+            return "UPI", hit[0], hit[1], kind
+    return "UPI", merch, from_note or cat, kind
 
 
 def _normalise(desc: str, rules: dict) -> tuple[str, str, str, str]:

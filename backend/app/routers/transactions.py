@@ -57,3 +57,10 @@ def recategorize(txn_id: str, body: Recategorize,
 
     db.commit()
     return {"ok": True}
+
+
+@router.post("/reclassify")
+def reclassify(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    changed = rules.reclassify(db, user.id)
+    db.commit()
+    return {"changed": changed}

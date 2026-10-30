@@ -94,7 +94,7 @@ Supporting tables: `users` (email, password_hash, `onboarded` flag that routes f
 
 **Duplicate key.** `txn_hash = sha256(user_id | txn_date | amount | type | raw_narration)`. SBI narrations carry a reference number, so genuine repeats normally differ; two rows that are byte-identical will collapse into one (see §9).
 
-**Category taxonomy.** Spend categories: Food & Dining, Shopping, Groceries, Bills & Utilities, Entertainment, Transport, Insurance, Cash, Bank Fees, Uncategorised. Non-spend categories (excluded from spend totals, category donut and top merchants): **Income**, **Investments**, **Transfer · Person**, **Cashback**. Income KPIs count only credits categorised as Income — refunds and transfers in do not inflate income.
+**Category taxonomy.** Spend categories: Food & Dining, Shopping, Groceries, Bills & Utilities, Entertainment, Transport, Insurance, Cash, Bank Fees, Uncategorised. Non-spend categories (excluded from spend totals, category donut and top merchants): **Income**, **Investments**, **P2P Transfer**, **Cashback**. Income KPIs count only credits categorised as Income — refunds and transfers in do not inflate income.
 
 **Insights computed from this table**
 
@@ -174,7 +174,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | Review-before-save screen | 1 | ✅ Built | `/upload/preview` saves nothing and returns a signed, 1-hour token carrying the parsed rows; `/upload/commit` takes the token + per-merchant corrections. Duplicates shown greyed, uncategorised flagged |
 | Rules + fuzzy categorisation | 1 | ✅ Built | ~45 seed merchants, `rapidfuzz` (88), then trade keywords ("MEDICALS" → Health, "KIRANA" → Groceries…). Most real UPI payees are local shops under a personal name, which no rule can know, so Review groups uncategorised payees for one-click categorising |
 | Duplicate detection | 1 | ✅ Built | See duplicate key in §5 |
-| Dashboard daily/monthly/yearly + KPIs, donut, top merchants | 1 | ✅ Built | |
+| Dashboard daily/monthly/yearly + KPIs, donut, top merchants | 1 | ✅ Built | Money in/out and net (income alone is 0 for UPI-only accounts), spend vs P2P, where money went (shops / people / investments / cash & fees) and where it came from, top people, spend by weekday, small spends (≤ ₹100), balance over time with low point, largest payments, and a "What Khaata noticed" list (P2P share, small spends, low balance, unusual and possible double charges, bank fees, busiest day, uncategorised share) |
 | Transactions date-range + search + category filter | 2 | ✅ Built | |
 | Learn from corrections (rule + retro-apply) | 3 | ✅ Built | From Review corrections and `PATCH /transactions/{id}/category`. A merchant-keyed rule overrides the narration-token match, so it also sticks for people, ATM and fees |
 | Recurring detection | 2 | 🟡 Partial | 2+ months, ≤40% amount spread. Missing: next-charge date, price-increase flag, real cadence (always "Monthly"); `is_recurring` column never set |
@@ -192,7 +192,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 
 - No migrations yet (tables come from `create_all`). Schema changes need the local `khaata.db` deleted; add Alembic before real data matters.
 - Byte-identical transactions on the same day dedupe into one.
-- Real SBI statements drop the `@handle` from UPI IDs, so person-vs-merchant is a guess: a 10-digit phone-number VPA is a person, anything else a merchant. Small payments to shopkeepers' phone-number VPAs land in Transfer · Person (excluded from spend) until recategorised.
+- **Person vs merchant (P2P vs P2M) is inferred**, because statements carry no merchant flag and SBI drops the `@handle`. NPCI's narration gives only: DR/CR, reference, payee name cut to ~8–10 characters, payee bank code, payee VPA, remark. `extractor.payee_kind` scores it: business words, digits, trade keywords, merchant-QR/gateway VPAs (`paytm.s…`, `bharatpe…`, PhonePe `q…` codes) → merchant; a title, a known first name (prefix match, `app/names.py`) or surname, or a phone-number VPA → person; unsure → merchant (stays in spend). A remark with a trade keyword ("rent") sets the category even for a person. On the real January statement: 16 P2P, 35 merchant (32 of them shop QR codes whose trade is unknown), 6 unclear.
 
 **Open questions**
 

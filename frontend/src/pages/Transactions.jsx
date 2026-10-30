@@ -9,6 +9,7 @@ export default function Transactions() {
   const [q, setQ] = useState("");
   const [onlyUncat, setOnlyUncat] = useState(false);
   const [saving, setSaving] = useState(null);
+  const [rerun, setRerun] = useState(null); // null | "busy" | number changed
 
   const load = () => api.transactions({ ...(q ? { q } : {}), ...(onlyUncat ? { category: "Uncategorised" } : {}) })
     .then(setRows).catch(() => {});
@@ -20,9 +21,25 @@ export default function Transactions() {
     try { await api.recategorize(r.id, category); await load(); } finally { setSaving(null); }
   };
 
+  const reclassify = async () => {
+    setRerun("busy");
+    try { const r = await api.reclassify(); setRerun(r.changed); await load(); } catch { setRerun(null); }
+  };
+
   return (
     <>
-      <h1 className="grotesk" style={{ fontSize: 26, margin: "0 0 16px" }}>Transactions</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <h1 className="grotesk" style={{ fontSize: 26, margin: 0, marginRight: "auto" }}>Transactions</h1>
+        {typeof rerun === "number" && (
+          <span role="status" style={{ fontSize: 13, color: "var(--accent-dark)" }}>
+            ✓ {rerun ? `Updated ${rerun} transaction${rerun > 1 ? "s" : ""}` : "Already up to date"}
+          </span>
+        )}
+        <button className="btn btn-ghost" onClick={reclassify} disabled={rerun === "busy"} style={{ fontSize: 13.5, padding: "9px 14px" }}
+          title="Re-run person/merchant detection and categories on saved rows. Your own corrections are kept.">
+          {rerun === "busy" ? "Re-checking…" : "Re-run auto-categorise"}
+        </button>
+      </div>
       <form onSubmit={(e) => { e.preventDefault(); load(); }}
         style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <input className="input" placeholder="Search merchant or narration" value={q}

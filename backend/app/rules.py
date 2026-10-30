@@ -24,3 +24,16 @@ def learn(db: Session, user_id: str, merchant: str, category: str) -> None:
     db.query(Transaction).filter(
         Transaction.user_id == user_id, Transaction.merchant == merchant
     ).update({Transaction.category: category})
+
+
+def reclassify(db: Session, user_id: str) -> int:
+    """Re-run categorisation over the user's saved rows with today's rules. Learned rules
+    still have the final say (see extractor.normalise), so the user's own corrections stay."""
+    current = user_rules(db, user_id)
+    changed = 0
+    for t in db.query(Transaction).filter(Transaction.user_id == user_id).all():
+        method, merchant, category, kind = extractor.normalise(t.raw_narration, current)
+        if (t.merchant, t.category, t.counterparty_kind) != (merchant, category, kind):
+            t.method, t.merchant, t.category, t.counterparty_kind = method, merchant, category, kind
+            changed += 1
+    return changed

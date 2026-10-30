@@ -44,6 +44,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ category, apply_to_similar: true }),
     }),
+  reclassify: () => req("/transactions/reclassify", { method: "POST" }),
   budgets: (month) => req(`/budgets${month ? "?month=" + month : ""}`),
   setBudget: (category, monthly_limit) =>
     req("/budgets", { method: "PUT", body: JSON.stringify({ category, monthly_limit }) }),

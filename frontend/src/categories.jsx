@@ -19,7 +19,7 @@ export const CAT_COLORS = {
   "Investments": "#2F6F5E",
   "Income": "#0E7C66",
   "Cashback": "#9A7BC4",
-  "Transfer · Person": "#A3A7AE",
+  "P2P Transfer": "#9F3A9C",
   "Uncategorised": "#B0B4BB",
 };
 
@@ -28,7 +28,7 @@ export const catColor = (c, i = 0) => CAT_COLORS[c] || FALLBACK[i % FALLBACK.len
 
 // The quick-pick row on Review: the categories local UPI payees most often turn out to be.
 export const QUICK_PICKS = [
-  "Food & Dining", "Groceries", "Shopping", "Health & Medical", "Transport", "Transfer · Person",
+  "Food & Dining", "Groceries", "Shopping", "Health & Medical", "Transport", "P2P Transfer",
 ];
 
 export function CategoryDot({ category, size = 8 }) {

@@ -91,7 +91,7 @@ def test_merchants_people_and_fallbacks():
     netflix = by_amount[Decimal("199.00")]
     assert (netflix.merchant, netflix.category) == ("Netflix", "Entertainment")
     priya = by_amount[Decimal("500.00")]  # 10-digit phone VPA -> a person
-    assert (priya.counterparty_kind, priya.category) == ("person", "Transfer · Person")
+    assert (priya.counterparty_kind, priya.category) == ("person", "P2P Transfer")
     shop = by_amount[Decimal("20.00")]  # paytm merchant QR -> stays in spend
     assert shop.counterparty_kind == "merchant"
     numeric = by_amount[Decimal("1.00")]  # payee shown only as a number -> named by its VPA
@@ -196,3 +196,32 @@ def test_not_a_statement():
 ])
 def test_keyword_categories(name, category):
     assert extractor._match(name, extractor.SEED_RULES)[1] == category
+
+
+@pytest.mark.parametrize("name, vpa, kind", [
+    ("Ramesh K", "9876543210", "person"),        # first name + phone VPA
+    ("PRIYANKA S", "priyanka.s", "person"),      # first name alone is enough
+    ("Rajeshkum", "rk1990", "person"),           # truncated, run-together name
+    ("Mr Bunty", "bunty", "person"),             # title
+    ("SHARMA", "9123456780", "person"),          # surname + phone
+    ("RAMESH K", "paytm.s1ab2c", "merchant"),    # a person's name on a shop QR is a shop
+    ("Ramesh K", "q123456789", "merchant"),      # PhonePe merchant code
+    ("SAI TRADERS", "9876543210", "merchant"),   # business word beats the phone VPA
+    ("KIRAN KIRANA", "kiran99", "merchant"),     # trade keyword beats the first name
+    ("A2B FOODS", "a2b", "merchant"),
+    ("XQZWV", "xqzwv", "merchant"),              # no evidence either way -> stays in spend
+])
+def test_payee_kind(name, vpa, kind):
+    assert extractor.payee_kind(name, vpa) == kind
+
+
+def test_person_note_keyword_beats_p2p():
+    row = "WDL TFR UPI/DR/600112233449/Ramesh K/SBIN/9876543210/rent oct"
+    _, _, category, kind = extractor.normalise(row)
+    assert (kind, category) == ("person", "Rent & Housing")
+
+
+def test_p2p_category_rule_marks_person():
+    rules = {**extractor.SEED_RULES, "xyz shop": ("Xyz Shop", "P2P Transfer")}
+    _, _, category, kind = extractor.normalise("UPI/DR/1/XYZ SHOP/YESB/q1234567/UPI", rules)
+    assert (kind, category) == ("person", "P2P Transfer")

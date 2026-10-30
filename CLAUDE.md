@@ -33,7 +33,8 @@ decision in the PRD, flag it rather than silently diverging.
     **Adding a bank = a new narration normaliser + table reader here.** Everything downstream is bank-agnostic.
   - `app/insights.py` — all aggregation (derived live from the `transactions` table).
   - `app/models.py` — `User`, `Upload`, `Transaction`, `MerchantRule`, `Budget`.
-  - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply).
+  - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply), `reclassify()` saved rows.
+  - `app/names.py` — person-vs-business signals (first names, surnames, business words, merchant-VPA hints) for P2P detection.
   - `app/routers/` — auth, upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
   - `tests/` — pytest against the sample PDFs; run `python -m pytest` from `backend/`.
 - `frontend/` — Vite + React. API client in `src/api.js` (proxied `/api` → backend).

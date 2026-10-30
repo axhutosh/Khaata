@@ -57,7 +57,7 @@ function PayeePanel({ rows, categories, categoryOf, setCategory }) {
               {QUICK_PICKS.map((c) => (
                 <button key={c} className={"chip" + (current === c ? " on" : "")} aria-pressed={current === c}
                   onClick={() => setCategory(p.row, current === c ? "Uncategorised" : c)}>
-                  <CategoryDot category={c} />{c === "Transfer · Person" ? "A person" : c}
+                  <CategoryDot category={c} />{c === "P2P Transfer" ? "A person" : c}
                 </button>
               ))}
               <select className="chip" value={QUICK_PICKS.includes(current) || !picked ? "" : current}
