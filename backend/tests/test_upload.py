@@ -79,3 +79,15 @@ def test_delete_upload_removes_its_rows(client):
 def test_recategorise_missing_txn_is_404(client):
     r = client.patch("/transactions/nope/category", json={"category": "Shopping"})
     assert r.status_code == 404
+
+
+def test_transaction_filters(client):
+    client.post("/upload/commit", json={"token": preview(client).json()["token"]})
+    every = client.get("/transactions?limit=1000").json()
+    out = client.get("/transactions?type=debit&limit=1000").json()
+    people = client.get("/transactions?kind=person&limit=1000").json()
+    assert out and all(t["type"] == "debit" for t in out)
+    assert people and all(t["kind"] == "person" for t in people)
+    assert len(every) == len(out) + len(client.get("/transactions?type=credit&limit=1000").json())
+    assert all("balance" in t for t in every)
+    assert client.get("/transactions?type=sideways").status_code == 422

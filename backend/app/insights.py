@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from .models import Transaction
+from . import recurring as rec
 
 # categories that are not "spending"
 NON_SPEND = {"Income", "Investments", "P2P Transfer", "Cashback"}
@@ -206,34 +207,9 @@ def top_merchants(db: Session, user_id: str, limit: int = 8) -> list[dict]:
     return [{"merchant": m, "amount": float(a), "count": n} for m, a, n in rows]
 
 
-def recurring(db: Session, user_id: str) -> list[dict]:
-    """Merchants that appear in 2+ distinct months with a similar amount."""
-    txns = _q(db, user_id).filter(Transaction.txn_type == "debit").all()
-    by_merchant: dict[str, list[Transaction]] = defaultdict(list)
-    for t in txns:
-        by_merchant[t.merchant].append(t)
-
-    out = []
-    for merchant, items in by_merchant.items():
-        months = {(t.txn_date.year, t.txn_date.month) for t in items}
-        if len(months) < 2:
-            continue
-        amounts = sorted(float(t.amount) for t in items)
-        median = amounts[len(amounts) // 2]
-        spread = (amounts[-1] - amounts[0]) / median if median else 1
-        if spread > 0.4:          # amounts too varied -> not a clean subscription
-            continue
-        last = max(items, key=lambda t: t.txn_date)
-        out.append({
-            "merchant": merchant,
-            "category": last.category,
-            "amount": median,
-            "cadence": "Monthly" if len(months) >= 2 else "—",
-            "occurrences": len(items),
-            "last_date": last.txn_date.isoformat(),
-            "is_investment": last.category == "Investments",
-        })
-    return sorted(out, key=lambda r: r["amount"], reverse=True)
+def recurring(db: Session, user_id: str) -> dict:
+    """Subscriptions, bills, SIPs/EMIs, regular transfers and income; see recurring.py."""
+    return rec.detect(_q(db, user_id).all())
 
 
 def _state(used: float, limit: float) -> str:

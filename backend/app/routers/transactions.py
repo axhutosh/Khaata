@@ -1,6 +1,7 @@
 import datetime as dt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Transaction
@@ -16,7 +17,9 @@ def list_txns(
     end: dt.date | None = None,
     category: str | None = None,
     q: str | None = None,
-    limit: int = 200,
+    type: str | None = Query(None, pattern="^(debit|credit)$"),
+    kind: str | None = Query(None, pattern="^(person|merchant|self|bank)$"),
+    limit: int = Query(200, ge=1, le=10000),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -27,14 +30,23 @@ def list_txns(
         query = query.filter(Transaction.txn_date <= end)
     if category:
         query = query.filter(Transaction.category == category)
+    if type:
+        query = query.filter(Transaction.txn_type == type)
+    if kind:
+        query = query.filter(Transaction.counterparty_kind == kind)
     if q:
         like = f"%{q}%"
         query = query.filter(Transaction.merchant.ilike(like) | Transaction.raw_narration.ilike(like))
-    rows = query.order_by(Transaction.txn_date.desc()).limit(limit).all()
+    # newest first; within a day, latest statement row first (so balances read top-down)
+    query = query.order_by(Transaction.txn_date.desc())
+    if db.get_bind().dialect.name == "sqlite":
+        query = query.order_by(text("transactions.rowid DESC"))
+    rows = query.limit(limit).all()
     return [{
         "id": r.id, "date": r.txn_date.isoformat(), "merchant": r.merchant,
         "raw": r.raw_narration, "category": r.category, "method": r.method,
         "type": r.txn_type, "amount": float(r.amount), "kind": r.counterparty_kind,
+        "balance": float(r.balance), "source": r.source_file,
     } for r in rows]
 
 
