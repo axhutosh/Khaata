@@ -7,6 +7,7 @@ from ..config import settings
 from ..database import get_db
 from ..models import User
 from ..auth import current_user, login_user
+from .. import passwords
 from ..passwords import hash_password, password_problem, verify_password
 from ..security import client_ip, login_throttle, signup_throttle
 
@@ -24,8 +25,13 @@ def _me(user: User) -> dict:
 
 @router.get("/config")
 def config():
-    """Public: what the sign-in page needs to know."""
-    return {"open_signup": settings.OPEN_SIGNUP}
+    """Public: what the sign-in page needs to know, including the new-password rules so the
+    form checks exactly what the server will (frontend/src/passwordRules.js)."""
+    return {
+        "open_signup": settings.OPEN_SIGNUP,
+        "password_policy": {"min_length": passwords.MIN_LENGTH, "passphrase_length": passwords.PASSPHRASE_LENGTH,
+                            "max_length": passwords.MAX_LENGTH, "common": sorted(passwords.COMMON)},
+    }
 
 
 @router.post("/signup")

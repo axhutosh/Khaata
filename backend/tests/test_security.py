@@ -51,21 +51,48 @@ def test_signup_twice_with_one_email_is_refused(anon):
 
 
 @pytest.mark.parametrize("pw, why", [
-    ("short", "at least"), ("password123", "easy to guess"), ("aaaaaaaaaaaa", "easy to guess"),
-    ("my-own-phrase-x", None), ("x" * 129, "at most"),
+    ("Short1!x", "12 characters"),
+    ("alllowercase", "mix of"),                      # 12 chars but one kind of character
+    ("P@ssw0rd2024!", "common"),                     # l33t + trailing digits still "password"
+    ("MyPassword!9x", "common"),                     # common word inside
+    ("Khaata@123456", "common"), ("Qwer!ty-2026x", "runs"), ("aaaaBBBB1111", "runs"), ("Blue#9876-Kite", "runs"),
+    ("rameshkumar-Rocks9", "email name"),
+    ("Mango-Rickshaw-42", None), ("Tr1cky!Mango", None),
+    ("correct horse battery", None),                 # long passphrase: less variety needed
+    ("x" * 129, "at most"),
 ])
-def test_password_rules(pw, why):
-    problem = passwords.password_problem(pw, "someone@x.in")
-    assert (problem is None) if why is None else (why in problem)
+def test_new_password_rules(pw, why):
+    problem = passwords.password_problem(pw, "rameshkumar@x.in")
+    assert (problem is None) if why is None else (why in problem), problem
 
 
-def test_password_may_not_contain_the_email_name():
-    assert "email" in passwords.password_problem("rameshkumar-rocks", "rameshkumar@x.in")
+def test_strength_meter():
+    e = "someone@x.in"
+    assert passwords.strength("short", e) == 0
+    assert passwords.strength("P@ssw0rd2024!", e) == 1          # fails a rule: capped low
+    assert passwords.strength("Tr1cky!Mango", e) == 3          # passes, 12 chars, 4 kinds
+    assert passwords.strength("Kite#Blue#Rain9", e) == 3
+    assert passwords.strength("Mango-Rickshaw-42-Kite", e) == 4
+
+
+def test_config_shares_the_password_policy(anon):
+    policy = anon.get("/auth/config").json()["password_policy"]
+    assert policy["min_length"] == passwords.MIN_LENGTH and "password" in policy["common"]
+
+
+def test_rules_apply_to_new_passwords_only(anon):
+    """An account whose password predates the rules can still sign in."""
+    from app.database import SessionLocal
+    from app.models import User
+    with SessionLocal() as db:
+        db.add(User(email="old@x.in", password_hash=passwords.hash_password("oldpass1")))
+        db.commit()
+    assert anon.post("/auth/login", json=creds(email="old@x.in", password="oldpass1")).status_code == 200
 
 
 def test_weak_password_is_refused_at_signup(anon):
-    r = anon.post("/auth/signup", json=creds(password="password123"))
-    assert r.status_code == 422 and "guess" in r.json()["detail"]
+    r = anon.post("/auth/signup", json=creds(password="P@ssw0rd2024!"))
+    assert r.status_code == 422 and "common" in r.json()["detail"]
     assert anon.get("/auth/me").status_code == 401
 
 

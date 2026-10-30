@@ -62,7 +62,7 @@ Throwaway SQLite DB and the sample PDFs. No Alembic yet: schema fixes live in
 
 ## Try the flow
 
-1. Open http://localhost:5173 → **Create account** (email + a 10+ character password).
+1. Open http://localhost:5173 → **Create account** (the form shows the password rules as you type).
 2. Upload `backend/samples/SBI_sample_locked.pdf`, password **`ASHUT1947`**
    (`SBI_sample.pdf` is the same statement unlocked).
 3. Review the parsed rows, fix categories, **Looks good — save**, land on the Dashboard.
@@ -88,8 +88,11 @@ cd backend
 
 ## Security
 
-- **Accounts**: email + password, hashed with scrypt. Passwords need 10+ characters, can't be a
-  common password or contain the email name. Sign-up is open by default; each account is
+- **Accounts**: email + password, hashed with scrypt. New passwords (sign-up and
+  `tools/set_password.py`, never sign-in) need 12+ characters with 3 kinds of character (or 16+
+  as a passphrase), can't be a common password even disguised (`P@ssw0rd2024!`), contain runs
+  like `1234`/`qwer`/`aaaa`, or include the email name. The sign-up form shows the same rules
+  live, fetching the word list from `/auth/config`. Sign-up is open by default; each account is
   sealed off from the others (`tests/test_isolation.py`).
 - **Every API needs a session** except `/auth/signup`, `/auth/login`, `/auth/logout`,
   `/auth/config` and `/health` — enforced per router in `app/main.py` and checked by a test

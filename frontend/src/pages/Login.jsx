@@ -2,22 +2,54 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import Logo from "../components/Logo";
+import { DEFAULT_POLICY, emailCheck, passwordChecks, passwordStrength } from "../passwordRules";
+
+const STRENGTH = [
+  { label: "Too weak", color: "#C2410C" }, { label: "Weak", color: "#C2410C" }, { label: "Fair", color: "#B45309" },
+  { label: "Good", color: "#0E7C66" }, { label: "Strong", color: "#0A5F4E" },
+];
+
+function StrengthMeter({ password, email, policy }) {
+  const checks = passwordChecks(password, email, policy);
+  const score = passwordStrength(password, email, policy);
+  const s = STRENGTH[score];
+  return (
+    <div id="pw-rules" style={{ marginTop: 10 }}>
+      {password && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }} aria-hidden="true">
+            {[1, 2, 3, 4].map((i) => (
+              <span key={i} style={{ height: 6, borderRadius: 3, background: i <= Math.max(score, 1) ? s.color : "#e6e4de" }} />
+            ))}
+          </div>
+          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: s.color, minWidth: 64, textAlign: "right" }}>
+            {s.label}
+          </span>
+        </div>
+      )}
+      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 5 }} aria-label="Password requirements">
+        {checks.map((c) => {
+          const state = !password ? "todo" : c.ok ? "ok" : "bad";
+          return (
+            <li key={c.label} style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.4,
+              color: state === "ok" ? "var(--accent-dark)" : state === "bad" ? "#92600f" : "var(--faint)" }}>
+              <span aria-hidden="true" style={{ width: 14, flex: "0 0 auto", fontWeight: 700 }}>
+                {state === "ok" ? "✓" : state === "bad" ? "✗" : "•"}
+              </span>
+              <span>{c.label}<span className="sr-only">{state === "ok" ? " — done" : state === "bad" ? " — not yet" : ""}</span></span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 const PROMISES = [
   ["Reads locked PDFs and Excel", "Your statement password is used once to unlock the file, then forgotten."],
   ["Daily, monthly, yearly", "Shops, people, subscriptions — every statement balance-checked to the paisa."],
   ["Private by design", "Your own Khaata, sealed off from everyone else's. Bank details encrypted at rest."],
 ];
-
-// Mirrors backend/app/passwords.py so people hear about a weak password before submitting.
-function passwordHint(pw, email) {
-  if (!pw) return null;
-  if (pw.length < 10) return `${10 - pw.length} more character${pw.length === 9 ? "" : "s"} needed`;
-  const local = (email.split("@")[0] || "").toLowerCase();
-  if (local.length >= 4 && pw.toLowerCase().includes(local)) return "Don't use your email address in it";
-  if (new Set(pw).size < 4) return "Too easy to guess — try a short phrase";
-  return null;
-}
 
 export default function Login() {
   const nav = useNavigate();
@@ -30,15 +62,24 @@ export default function Login() {
   const [err, setErr] = useState(params.get("expired") ? "Your session ended. Please sign in again." : "");
   const [busy, setBusy] = useState(false);
   const [openSignup, setOpenSignup] = useState(true);
+  const [policy, setPolicy] = useState(DEFAULT_POLICY);
+  const [emailTouched, setEmailTouched] = useState(false);
 
-  useEffect(() => { api.authConfig().then((c) => setOpenSignup(c.open_signup)).catch(() => {}); }, []);
-  useEffect(() => { setErr(""); setPassword(""); }, [signup]);
+  useEffect(() => {
+    api.authConfig().then((c) => { setOpenSignup(c.open_signup); if (c.password_policy) setPolicy(c.password_policy); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { setErr(""); setPassword(""); setEmailTouched(false); }, [signup]);
 
-  const hint = signup ? passwordHint(password, email) : null;
+  const mail = emailCheck(email);
+  const showEmailError = emailTouched && mail.error;
+  const pwOk = !signup || passwordChecks(password, email, policy).every((c) => c.ok);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (hint) return setErr(hint + ".");
+    setEmailTouched(true);
+    if (mail.error) return setErr(mail.error);
+    if (!pwOk) return setErr("Your password doesn't meet every requirement yet — see the list below it.");
     setBusy(true); setErr("");
     try {
       const me = await (signup ? api.signup : api.login)(email.trim(), password);
@@ -99,27 +140,35 @@ export default function Login() {
 
           <form onSubmit={submit} noValidate>
             <label htmlFor="email" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 7 }}>Email</label>
-            <input id="email" className="input" type="email" autoComplete="email" required value={email}
-              onChange={(e) => setEmail(e.target.value)} style={{ marginBottom: 18 }} />
+            <input id="email" className="input" type="email" inputMode="email" autoComplete="email" required value={email}
+              placeholder="you@example.com" spellCheck={false} autoCapitalize="none"
+              aria-invalid={showEmailError ? true : undefined} aria-describedby="email-msg"
+              onChange={(e) => setEmail(e.target.value)} onBlur={() => email && setEmailTouched(true)}
+              style={showEmailError ? { borderColor: "var(--spend)" } : undefined} />
+            <div id="email-msg" style={{ minHeight: 18, margin: "6px 0 10px", fontSize: 12.5 }}>
+              {showEmailError && <span style={{ color: "#9a3412" }}>✗ {mail.error}</span>}
+              {!mail.error && mail.suggestion && signup && (
+                <span style={{ color: "var(--muted)" }}>
+                  Did you mean{" "}
+                  <button type="button" className="link-btn" onClick={() => setEmail(mail.suggestion)}>{mail.suggestion}</button>?
+                </span>
+              )}
+            </div>
 
             <label htmlFor="password" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 7 }}>Password</label>
             <div style={{ position: "relative" }}>
               <input id="password" className="input" type={show ? "text" : "password"} required value={password}
-                autoComplete={signup ? "new-password" : "current-password"} aria-describedby={signup ? "pw-hint" : undefined}
+                autoComplete={signup ? "new-password" : "current-password"} aria-describedby={signup ? "pw-rules" : undefined}
                 onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 70 }} />
               <button type="button" className="link-btn" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"}
                 style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 13 }}>
                 {show ? "Hide" : "Show"}
               </button>
             </div>
-            {signup && (
-              <p id="pw-hint" style={{ fontSize: 12.5, margin: "8px 0 0", color: hint ? "#92600f" : password ? "var(--accent-dark)" : "var(--faint)" }}>
-                {hint ? hint : password ? "✓ Good password" : "At least 10 characters. A short phrase works well."}
-              </p>
-            )}
+            {signup && <StrengthMeter password={password} email={email} policy={policy} />}
 
             <button className="btn" style={{ width: "100%", minHeight: 46, marginTop: 24 }} type="submit"
-              disabled={busy || !email || !password}>
+              disabled={busy || !email || !password || (signup && (!pwOk || !!mail.error))}>
               {busy ? <><span className="spinner" aria-hidden="true" /> {signup ? "Creating account…" : "Signing in…"}</>
                 : signup ? "Create account" : "Sign in"}
             </button>
