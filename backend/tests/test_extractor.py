@@ -28,9 +28,10 @@ def test_locked_and_unlocked_parse_identically():
 
 
 def test_sample_reconciles_and_amounts_are_positive():
-    pdf = extractor.decrypt_to_bytes(LOCKED.read_bytes(), PASSWORD)
-    txns = extractor.parse(pdf)
-    check = extractor.balance_check(txns, extractor.extract_opening(pdf))
+    layout = extractor.read_pdf(extractor.decrypt_to_bytes(LOCKED.read_bytes(), PASSWORD))
+    txns = extractor.parse_tables(layout.tables)
+    summary = extractor.statement_summary(layout.text)
+    check = extractor.balance_check(txns, summary["opening"], summary["closing"])
     assert check["reconciles"], check
     assert all(t.amount > 0 and t.txn_type in ("debit", "credit") for t in txns)
     assert all(t.category in extractor.CATEGORIES for t in txns)

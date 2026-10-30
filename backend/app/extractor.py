@@ -98,29 +98,63 @@ def _parse_date(s: str) -> dt.date:
     raise ValueError(f"Unrecognised date: {s!r}")
 
 
-def extract_rows(pdf_bytes: bytes) -> list[dict]:
-    rows = []
+@dataclass
+class Layout:
+    """What the extractor reads from a statement: every table (rows of cells) and the page text."""
+    tables: list[list[list[str | None]]]
+    text: str
+
+
+def read_pdf(pdf_bytes: bytes) -> Layout:
+    tables, text = [], []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            for table in page.extract_tables():
-                for r in table:
-                    cells = [(c or "").strip().replace("\n", " ") for c in r]
-                    if len(cells) < 7:
-                        continue
-                    txn_date, _value_date, desc, ref, debit, credit, balance = cells[:7]
-                    if not _DATE.match(txn_date):
-                        continue
-                    rows.append({"date": txn_date, "desc": desc, "ref": ref,
-                                 "debit": debit, "credit": credit, "balance": balance})
+            tables.extend(page.extract_tables())
+            text.append(page.extract_text() or "")
+    return Layout(tables=tables, text="\n".join(text))
+
+
+def _unwrap(cell: str | None) -> str:
+    """Rejoin a cell the PDF wrapped onto several lines. SBI breaks at spaces when it can
+    and mid-word when it can't, so glue the pieces back without a space when the break
+    sits inside a word ("Swigg|y"), inside a run of digits, or next to a '/'."""
+    lines = [ln.strip() for ln in (cell or "").split("\n") if ln.strip()]
+    out = lines[0] if lines else ""
+    for ln in lines[1:]:
+        a, b = out[-1], ln[0]
+        glue = (a == "/" or b == "/" or (a.islower() and b.islower())
+                or (a.isdigit() and b.isdigit()))
+        out += ("" if glue else " ") + ln
+    return out
+
+
+def rows_from_tables(tables: list[list[list[str | None]]]) -> list[dict]:
+    rows = []
+    for table in tables:
+        for r in table:
+            cells = [_unwrap(c) for c in r]
+            if len(cells) < 7:
+                continue
+            txn_date, _value_date, desc, ref, debit, credit, balance = cells[:7]
+            if not _DATE.match(txn_date):
+                continue
+            rows.append({"date": txn_date, "desc": desc, "ref": ref,
+                         "debit": debit, "credit": credit, "balance": balance})
     return rows
 
 
 # --------------------------------------------------------------------------- #
 # 4. Normalise SBI narration
 # --------------------------------------------------------------------------- #
-_UPI = re.compile(r"TRANSFER-UPI/(?:DR|CR)/\d+/([^/]+)/[^/]*/([^/]+)/", re.I)
+# "UPI/DR/<ref>/<payee name>/<payee bank>/<payee VPA>/<note>", with or without a
+# "TO TRANSFER-" / "WDL TFR" lead-in
+_UPI = re.compile(r"UPI/(?:DR|CR)/\d+/(?P<name>[^/]*)/(?P<bank>[^/]*)/(?P<vpa>[^/]*)", re.I)
 _NEFT = re.compile(r"TRANSFER-NEFT\*\d+\*([^*]+)\*", re.I)
+# Google Pay personal handles, when the statement shows the full VPA
 _PERSON_VPA = re.compile(r"@ok(sbi|hdfcbank|axis|icici)$", re.I)
+# Real SBI statements append "<ref> AT <branch code> <branch name>" and prefix "WDL TFR"/"DEP TFR"
+_SBI_TRAILER = re.compile(r"\s+\d{9,}\s+AT\s+\d+(\s+.*)?$", re.I)
+_SBI_LEAD = re.compile(r"^(WDL|DEP)\s+[A-Z]{2,4}\s+(?=\S*/)", re.I)
 
 # every category the pipeline can assign; the Review screen offers these
 CATEGORIES = [
@@ -141,7 +175,32 @@ SEED_RULES = {
     "more supermarket": ("More", "Groceries"),
     "reliance jio": ("Jio", "Bills & Utilities"),
     "netflix entmnt": ("Netflix", "Entertainment"),
+    "netflix": ("Netflix", "Entertainment"),
     "spotify india": ("Spotify", "Entertainment"),
+    "spotify": ("Spotify", "Entertainment"),
+    "hotstar": ("Disney+ Hotstar", "Entertainment"),
+    "youtube": ("YouTube", "Entertainment"),
+    "bookmyshow": ("BookMyShow", "Entertainment"),
+    "flipkart": ("Flipkart", "Shopping"),
+    "myntra": ("Myntra", "Shopping"),
+    "meesho": ("Meesho", "Shopping"),
+    "ajio": ("AJIO", "Shopping"),
+    "bigbasket": ("BigBasket", "Groceries"),
+    "instamart": ("Swiggy Instamart", "Groceries"),
+    "dmart": ("DMart", "Groceries"),
+    "avenue supermarts": ("DMart", "Groceries"),
+    "dominos": ("Domino's", "Food & Dining"),
+    "mcdonalds": ("McDonald's", "Food & Dining"),
+    "starbucks": ("Starbucks", "Food & Dining"),
+    "airtel": ("Airtel", "Bills & Utilities"),
+    "bsnl": ("BSNL", "Bills & Utilities"),
+    "tata play": ("Tata Play", "Bills & Utilities"),
+    "ola": ("Ola", "Transport"),
+    "rapido": ("Rapido", "Transport"),
+    "irctc": ("IRCTC", "Transport"),
+    "zerodha": ("Zerodha", "Investments"),
+    "upstox": ("Upstox", "Investments"),
+    "lic": ("LIC", "Insurance"),
     "bescom": ("BESCOM", "Bills & Utilities"),
     "uber india": ("Uber", "Transport"),
     "groww": ("Groww SIP", "Investments"),
@@ -159,8 +218,14 @@ def _match(name: str, rules: dict) -> tuple[str, str]:
     key = _clean(name)
     if key in rules:
         return rules[key]
+    # space-insensitive, because wrapped narrations gain or lose spaces ("SWIGG Y", "BUNDLTECH");
+    # short tokens ("lic", "ola", "cred") must be whole words or they'd hit "click", "cola"
+    squashed = key.replace(" ", "")
     for token, (merch, cat) in rules.items():
-        if token in key:
+        flat = token.replace(" ", "")
+        hit = (flat in squashed if len(flat) >= 5
+               else re.search(rf"\b{re.escape(token)}\b", key))
+        if hit:
             return merch, cat
     try:
         from rapidfuzz import process, fuzz
@@ -184,8 +249,37 @@ def normalise(desc: str, rules: dict | None = None) -> tuple[str, str, str, str]
     return method, merchant, category, kind
 
 
+def _upi_kind(vpa: str) -> str:
+    """Person or merchant, from the payee VPA. Real SBI statements drop the '@handle',
+    leaving only the local part; a 10-digit phone number there is a person. Anything else
+    counts as a merchant, so ambiguous payments stay in spend rather than vanishing into
+    transfers."""
+    local, _, handle = vpa.strip().partition("@")
+    if handle:
+        return "person" if _PERSON_VPA.search(vpa.strip()) else "merchant"
+    return "person" if re.fullmatch(r"\d{10}", local) else "merchant"
+
+
+def _upi(d: str, rules: dict) -> tuple[str, str, str, str] | None:
+    m = _UPI.search(d)
+    if not m:
+        return None
+    name, vpa = m.group("name").strip(), m.group("vpa").strip()
+    kind = _upi_kind(vpa)
+    if kind == "person":
+        return "UPI", (name or vpa).title(), "Transfer · Person", kind
+    if not name or name.isdigit():  # some payees show only a number; fall back to the VPA
+        name = vpa or "UPI payment"
+    merch, cat = _match(name, rules)
+    if cat == "Uncategorised" and vpa:  # "netflix.pg", "zomato-order" ...
+        hit = _match(vpa.replace(".", " ").replace("-", " "), rules)
+        if hit[1] != "Uncategorised":
+            merch, cat = hit
+    return "UPI", merch, cat, kind
+
+
 def _normalise(desc: str, rules: dict) -> tuple[str, str, str, str]:
-    d = desc.strip()
+    d = _SBI_LEAD.sub("", _SBI_TRAILER.sub("", desc.strip()))
     up = d.upper()
 
     if up.startswith(("ATM WDL", "ATM CASH")):
@@ -198,14 +292,9 @@ def _normalise(desc: str, rules: dict) -> tuple[str, str, str, str]:
         merch, cat = _match(name, rules)
         return "ACH", merch, cat, "merchant"
 
-    mu = _UPI.search(d)
-    if mu:
-        name, vpa = mu.group(1), mu.group(2)
-        kind = "person" if _PERSON_VPA.search(vpa) else "merchant"
-        merch, cat = _match(name, rules)
-        if kind == "person":
-            merch, cat = name.strip().title(), "Transfer · Person"
-        return "UPI", merch, cat, kind
+    upi = _upi(d, rules)
+    if upi:
+        return upi
 
     mn = _NEFT.search(d)
     if mn:
@@ -225,8 +314,12 @@ def _normalise(desc: str, rules: dict) -> tuple[str, str, str, str]:
 # 5. Assemble + balance check
 # --------------------------------------------------------------------------- #
 def parse(pdf_bytes: bytes, rules: dict | None = None) -> list[ParsedTxn]:
+    return parse_tables(read_pdf(pdf_bytes).tables, rules)
+
+
+def parse_tables(tables: list[list[list[str | None]]], rules: dict | None = None) -> list[ParsedTxn]:
     out = []
-    for r in extract_rows(pdf_bytes):
+    for r in rows_from_tables(tables):
         debit, credit, balance = _money(r["debit"]), _money(r["credit"]), _money(r["balance"])
         if balance is None or (debit is None and credit is None):
             continue
@@ -241,11 +334,21 @@ def parse(pdf_bytes: bytes, rules: dict | None = None) -> list[ParsedTxn]:
     return out
 
 
-def balance_check(txns: list[ParsedTxn], opening: Decimal) -> dict:
+def opening_from_first_row(txns: list[ParsedTxn]) -> Decimal:
+    """Back the opening balance out of the first row, when the statement doesn't state it."""
+    t = txns[0]
+    return t.balance - t.amount if t.txn_type == "credit" else t.balance + t.amount
+
+
+def balance_check(txns: list[ParsedTxn], opening: Decimal, closing: Decimal | None = None) -> dict:
+    """opening + credits - debits must equal closing. Pass the statement's own closing
+    figure when it has one: comparing against the last row's balance can't catch a
+    missing last row."""
     credits = sum((t.amount for t in txns if t.txn_type == "credit"), Decimal(0))
     debits = sum((t.amount for t in txns if t.txn_type == "debit"), Decimal(0))
     expected = opening + credits - debits
-    closing = txns[-1].balance if txns else opening
+    if closing is None:
+        closing = txns[-1].balance if txns else opening
     return {
         "opening": str(opening), "credits": str(credits), "debits": str(debits),
         "expected_closing": str(expected), "statement_closing": str(closing),
@@ -254,9 +357,28 @@ def balance_check(txns: list[ParsedTxn], opening: Decimal) -> dict:
     }
 
 
-def extract_opening(pdf_bytes: bytes) -> Decimal | None:
-    """Read the 'Opening Balance : N' line from the statement header, if present."""
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        text = pdf.pages[0].extract_text() or ""
-    m = re.search(r"Opening Balance\s*:?\s*([\d,]+\.\d{2})", text, re.I)
-    return _money(m.group(1)) if m else None
+_SIGNED = r"([\d,]+\.\d{2})\s*(CR|DR)?"
+
+
+def _signed(amount: str, side: str | None) -> Decimal:
+    v = _money(amount)
+    return -v if (side or "").upper() == "DR" else v
+
+
+def statement_summary(text: str) -> dict:
+    """Opening and closing balance as the statement states them (None when absent).
+    Real SBI: a 'Statement Summary' whose header row ('Brought Forward ... Closing Balance')
+    sits above a row of figures, the first being the opening and the last the closing.
+    Older layout: 'Opening Balance : N' / 'Closing Balance : N' in the header."""
+    out = {"opening": None, "closing": None}
+    m = re.search(r"Brought Forward.*?Closing Balance[^\n]*\n\s*([^\n]+)", text, re.I | re.S)
+    if m:
+        figures = re.findall(_SIGNED, m.group(1), re.I)
+        if len(figures) >= 2:
+            out["opening"], out["closing"] = _signed(*figures[0]), _signed(*figures[-1])
+            return out
+    for key, label in (("opening", "Opening Balance"), ("closing", "Closing Balance")):
+        m = re.search(label + r"\s*:?\s*" + _SIGNED, text, re.I)
+        if m:
+            out[key] = _signed(m.group(1), m.group(2))
+    return out

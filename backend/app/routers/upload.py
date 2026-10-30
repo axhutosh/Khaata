@@ -6,7 +6,6 @@
   POST /upload/commit   -> token + the user's category corrections -> save.
 """
 import hashlib
-from decimal import Decimal
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel
@@ -51,13 +50,16 @@ async def preview(
         status = 401 if "password" in str(e) else 422
         raise HTTPException(status_code=status, detail=str(e))
 
-    parsed = extractor.parse(pdf_bytes, rules.user_rules(db, user.id))
+    layout = extractor.read_pdf(pdf_bytes)
+    parsed = extractor.parse_tables(layout.tables, rules.user_rules(db, user.id))
     if not parsed:
         raise HTTPException(status_code=422, detail="No transactions found. Is this an SBI statement?")
 
-    opening = extractor.extract_opening(pdf_bytes) or (parsed[0].balance - (
-        parsed[0].amount if parsed[0].txn_type == "credit" else -parsed[0].amount))
-    check = extractor.balance_check(parsed, Decimal(str(opening)))
+    summary = extractor.statement_summary(layout.text)
+    opening = summary["opening"]
+    if opening is None:
+        opening = extractor.opening_from_first_row(parsed)
+    check = extractor.balance_check(parsed, opening, summary["closing"])
 
     hashes = [_hash(user.id, t) for t in parsed]
     saved, seen, rows = _saved_hashes(db, user.id, hashes), set(), []

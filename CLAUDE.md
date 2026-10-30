@@ -57,9 +57,10 @@ budgets, dedupe and upload deletion all work; balance check reconciles to ₹0.0
 live in **`docs/PRD.md` §9** — keep it current as things ship.
 
 **Next up (Phase-1 finish):**
-1. Replace the synthetic statement with a real (redacted) SBI PDF (the user will share one) and
-   tighten `app/extractor.py` regexes to its exact layout (date format, wrapped narrations, column
-   widths). Add it as a test fixture.
+1. Extractor is fitted to one real SBI statement (masked; only UPI rows). Get statements with
+   NEFT/IMPS/ATM/ACH/charges/interest to finish it. Real layout facts are pinned in
+   `tests/test_sbi_layout.py`. Real statements go in `backend/samples/real/` (git-ignored; the
+   repo is **public**), masked with `tools/mask_statement.py`; only read the `.masked.*` files.
 2. Encryption at rest for `raw_narration` (approach locked in PRD §7) — add Alembic first.
 3. Then Phase 2 per the PRD (alerts, export, recurring next-charge + price-increase, Google sign-in).
 
