@@ -55,21 +55,41 @@ decision in the PRD, flag it rather than silently diverging.
 - Frontend: use the existing `card` / `nav` / `btn` / `pill` classes and `inr()`; don't restyle per page.
 - Colour never carries meaning by hue alone (accessibility).
 
-## Current status
+## Current status (2026-10-31)
 
-Phase-1 spine is built and verified against a **synthetic** SBI statement
-(`backend/samples/SBI_sample_locked.pdf`, password `ASHUT1947`): auth, upload+decrypt,
-Review-before-save (preview/commit), extractor, transactions, insights, recurring, per-month
-budgets, dedupe and upload deletion all work; balance check reconciles to ₹0.00. The per-requirement status table, known issues and open questions
-live in **`docs/PRD.md` §9** — keep it current as things ship.
+Working end to end locally and verified against a **real** (masked) SBI statement: 57/57 rows,
+balance check reconciles to ₹0.00. ~114 backend tests. The per-requirement status table, known
+issues and open questions live in **`docs/PRD.md` §9** — keep it current as things ship.
 
-**Next up (Phase-1 finish):**
-1. Extractor is fitted to one real SBI statement (masked; only UPI rows). Get statements with
-   NEFT/IMPS/ATM/ACH/charges/interest to finish it. Real layout facts are pinned in
-   `tests/test_sbi_layout.py`. Real statements go in `backend/samples/real/` (git-ignored; the
-   repo is **public**), masked with `tools/mask_statement.py`; only read the `.masked.*` files.
-2. ~~Encryption at rest~~ done (`app/crypto.py`, `DATA_KEY`). Still to do: Alembic migrations (schema fixes live in `main.migrate_data` for now).
-3. Then Phase 2 per the PRD (alerts, export, hosting, then Google sign-in once on a verified domain).
+**Built:**
+- **Statements**: SBI PDF (locked or not) and Excel; real SBI UPI layout (wrapped narrations,
+  `WDL TFR … AT <branch>` trailer, Statement Summary for opening/closing); Review-before-save
+  (preview/commit); dedupe; delete an upload.
+- **Categorisation**: seed merchants → fuzzy → trade keywords; P2P vs merchant scoring
+  (`names.py`, phone-number/QR VPAs, business words); learned rules from corrections; re-run on
+  saved rows (`POST /transactions/reclassify`).
+- **Insights**: Dashboard (money in/out, P2P vs shops, categories, people, weekday, small spends,
+  balance trend, largest payments, "What Khaata noticed"); Subscriptions (`recurring.py`: cadence,
+  next charge, price changes, may-have-stopped, frequent places); Transactions (filters, grouped
+  by day); per-month Budgets.
+- **Accounts & security**: email + password with open sign-up and strong new-password rules
+  (`passwords.py`, mirrored in `frontend/src/passwordRules.js`); every API needs a session;
+  per-user isolation test; CSRF origin check; throttling; security headers; narrations
+  encrypted at rest (`crypto.py`, `DATA_KEY`).
+- **Brand**: logo, favicon, app icons (`branding/`, `frontend/scripts/make_brand.py`).
+  README is product + brand only; dev guide in `docs/SETUP.md`.
+
+**Next up:**
+1. **Hosting** (planned next session): one container on Railway (FastAPI serves the built
+   frontend) + managed Postgres with backups; a domain the owner buys; `/privacy` and `/terms`
+   pages; a "Delete my account and data" option. Not Vercel (4.5 MB request limit, no disk).
+2. After hosting: Google sign-in again (needs the verified domain + privacy/terms), Alembic.
+3. Extractor: still only UPI rows tested on a real statement — get masked statements with
+   NEFT/IMPS/ATM/ACH/charges/interest, and a real SBI Excel export. Real statements go in
+   `backend/samples/real/` (git-ignored; the repo is **public**), masked with
+   `tools/mask_statement.py`; only read the `.masked.*` files.
+4. Phase 2 leftovers: CSV/PDF export, Budgets page polish (category picker, history),
+   browser UI pass over every screen.
 
 ## Run
 
