@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { inr, inrExact } from "../api";
-import { CategoryDot, QUICK_PICKS } from "../categories";
+import { CategoryDot, QUICK_PICKS } from "../categories.jsx";
 
 const AMBER = { bg: "#fdf3e7", line: "#f0e2c9", ink: "#92600f" };
 const JADE = { bg: "#ecf6f1", line: "#cde7db", ink: "#0a5f4e" };

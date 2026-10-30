@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, inr } from "../api";
-import { CAT_COLORS, CategoryDot } from "../categories";
+import { CAT_COLORS, CategoryDot } from "../categories.jsx";
 
 const CATEGORIES = Object.keys(CAT_COLORS);
 

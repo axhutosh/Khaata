@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { api, inr } from "../api";
-import { catColor as color } from "../categories";
+import { catColor as color } from "../categories.jsx";
 
 export default function Dashboard() {
   const [period, setPeriod] = useState("month");
