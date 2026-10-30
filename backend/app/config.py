@@ -43,14 +43,15 @@ class Settings:
     def production(self) -> bool:
         return self.ENV == "production"
 
-    def check(self) -> None:
+    def check(self, weak_password_users: list[str] = ()) -> None:
         """Refuse unsafe defaults in production; warn about them in development."""
         problems = []
         if self.SECRET_KEY in PLACEHOLDER_SECRETS or len(self.SECRET_KEY) < 32:
             problems.append("SECRET_KEY is a placeholder or shorter than 32 characters "
                             "(generate one: python -c \"import secrets; print(secrets.token_urlsafe(48))\")")
-        if self.SEED_PASSWORD in ("", "password") or len(self.SEED_PASSWORD) < 10:
-            problems.append("SEED_PASSWORD is the default or shorter than 10 characters")
+        if weak_password_users:
+            problems.append(f"{', '.join(weak_password_users)} still signs in with the default or a short password "
+                            "(change it: python tools/set_password.py <email>)")
         if self.production and not self.SESSION_SECURE:
             problems.append("SESSION_SECURE must be on in production (cookies over HTTPS only)")
         if problems and self.production:

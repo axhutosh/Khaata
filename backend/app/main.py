@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .database import Base, engine, SessionLocal
 from .models import User
-from .auth import current_user, hash_password
+from .auth import current_user, hash_password, verify_password
 from .security import OriginCheck, SecurityHeaders
 from .routers import auth, upload, uploads, transactions, insights, budgets
 
@@ -34,12 +34,24 @@ def migrate_data():
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"))
 
 
+def weak_password_users() -> list[str]:
+    """Accounts whose real (stored) password is a default or too short to be safe.
+    SEED_PASSWORD only matters when the account is first created, so check the database."""
+    weak = [settings.SEED_PASSWORD] if len(settings.SEED_PASSWORD) < 10 else []
+    db = SessionLocal()
+    try:
+        return [u.email for u in db.query(User).all()
+                if any(verify_password(pw, u.password_hash) for pw in ("password", *weak))]
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings.check()
     Base.metadata.create_all(bind=engine)
     migrate_data()
     seed_user()
+    settings.check(weak_password_users())
     yield
 
 

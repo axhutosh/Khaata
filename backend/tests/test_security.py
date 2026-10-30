@@ -146,6 +146,12 @@ def test_production_refuses_unsafe_defaults(monkeypatch):
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         s.check()
     monkeypatch.setattr(s, "SECRET_KEY", "k" * 48)
-    monkeypatch.setattr(s, "SEED_PASSWORD", "a-long-unguessable-pass")
     monkeypatch.setattr(s, "SESSION_SECURE", True)
-    s.check()  # all good: no error
+    with pytest.raises(RuntimeError, match="default or a short password"):
+        s.check(["me@khaata.in"])
+    s.check([])  # all good: no error
+
+
+def test_weak_stored_password_is_detected(anon):
+    from app.main import weak_password_users
+    assert weak_password_users() == ["me@khaata.in"]  # test seed password "pw" is short
