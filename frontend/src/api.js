@@ -11,7 +11,7 @@ async function req(path, opts = {}) {
   });
   if (!res.ok) {
     // a data call that comes back 401 means the session ended: go sign in again
-    if (res.status === 401 && !path.startsWith("/auth/") && location.pathname !== "/login") {
+    if (res.status === 401 && !path.startsWith("/auth/") && !["/login", "/signup"].includes(location.pathname)) {
       location.assign("/login?expired=1");
     }
     const detail = await res.json().catch(() => ({}));
@@ -23,7 +23,10 @@ async function req(path, opts = {}) {
 export const api = {
   me: () => req("/auth/me"),
   authConfig: () => req("/auth/config"),
-  google: (credential) => req("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
+  signup: (email, password) =>
+    req("/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
+  login: (email, password) =>
+    req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req("/auth/logout", { method: "POST" }),
 
   preview: (file, password) => {

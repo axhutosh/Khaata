@@ -10,7 +10,7 @@ _As of 2026-10-30 · Owner: Ashutosh_
 
 Khaata turns a bank-statement PDF into a clear picture of where money goes. The user signs in, uploads a statement (password-protected is fine), reviews the parsed transactions, and gets daily, monthly and yearly insights.
 
-- **User (v1):** open to anyone with a Google account (decided 2026-10-31); each person sees only their own data.
+- **User (v1):** open sign-up (decided 2026-10-31); each person sees only their own data.
 - **Core promise:** upload once, see everything — categories, top merchants, subscriptions, trends, budgets and alerts — with numbers the user can trust (every statement is balance-checked on import).
 - **Primary input:** PDF statements (full history in one file). SMS capture and the Account Aggregator framework are explicitly deferred.
 
@@ -18,7 +18,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 
 **In scope**
 
-- Google sign-in (only); anyone with a verified Google account can sign up and gets their own, isolated data.
+- Email + password sign-up and sign-in; anyone can create an account and gets their own, isolated data.
 - Upload bank-statement PDFs, including password-protected (user enters the password).
 - Decrypt, extract transactions, balance-check, store in a database.
 - Review screen to fix mis-categorised rows before saving.
@@ -39,7 +39,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 
 **One-time onboarding** (first run only; Upload lives here, not in the main nav):
 
-1. Sign in with Google.
+1. Create an account (email + password) or sign in.
 2. Upload a statement PDF — ideally several months in one file.
 3. If the PDF is locked, enter its password; Khaata decrypts in memory.
 4. Khaata extracts transactions and runs the balance check.
@@ -58,7 +58,7 @@ Six screens, matching the approved designs (see `DESIGN.md`).
 
 | Screen | Purpose | Key requirements |
 | --- | --- | --- |
-| Login | Authenticate | Google sign-in only; session cookie; first-run users → onboarding, returning users → Dashboard |
+| Login | Authenticate | Email + password sign-in and sign-up; session cookie; first-run users → onboarding, returning users → Dashboard |
 | Onboarding: Upload & Unlock | Get the statement in | Drag/drop PDF; detect encryption; password field with bank-specific hint; decrypt in memory; wrong-password retry; accept multiple files |
 | Review | Trust the data | Parsed table (date, merchant, raw narration, category, amount); balance-check banner (opening + credits − debits = closing); flag uncategorised rows; inline category edit; save all |
 | Dashboard | The insights home | Daily/Monthly/Yearly toggle; KPIs (income, spent, saved, daily avg); income-vs-spend trend; category donut; top merchants; "what Khaata noticed" alerts |
@@ -140,7 +140,7 @@ Since it's one user, the merchant set is small and repetitive, so the dictionary
 **Locked decisions**
 
 - **Storage:** yes — transactions are stored so daily/monthly/yearly history works across uploads.
-- **Sign-in (decided 2026-10-31):** Google sign-in only — no email/password. **Open sign-up**: any verified Google account gets its own, separate account on first sign-in (`OPEN_SIGNUP=true`); `OPEN_SIGNUP=false` makes it invite-only via `ALLOWED_EMAILS`. This reverses the earlier single-user-only scope; per-user isolation is proven by `tests/test_isolation.py`.
+- **Sign-in (decided 2026-10-31):** email + password with open sign-up (`OPEN_SIGNUP=true`; `false` = invite-only via `ALLOWED_EMAILS`). Google sign-in was built, then removed the same day: publishing it needs a hosted app on an owned, verified domain with privacy/terms pages. Revisit after hosting. Open sign-up reverses the earlier single-user-only scope; per-user isolation is proven by `tests/test_isolation.py`.
 - **Password handling:** user types the statement password; used once to decrypt, never stored. No auto-guessing from PAN/DOB in v1.
 - **SIP vs EMI:** SIPs count as **Investments** (wealth, excluded from spend so savings rate stays honest); EMIs count as spend under Bills/Loan. Both still appear under recurring.
 - **Time toggle:** Daily/Monthly/Yearly lives on the Dashboard only; Transactions uses a date-range filter instead.
@@ -167,8 +167,8 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 
 | Requirement | Phase | Status | Notes |
 | --- | --- | --- | --- |
-| Email/password login | — | ❌ Removed | Dropped 2026-10-31 by decision: Google sign-in only (§7) |
-| Google sign-in | 1 | ✅ Built | Google Identity Services button → backend verifies the ID token with `google-auth`; allow-listed, verified emails only; links the Google account (`users.google_sub`). Needs `GOOGLE_CLIENT_ID` from Google Cloud Console |
+| Email/password sign-up + sign-in | 1 | ✅ Built | scrypt hashes, password rules, sign-in and sign-up throttling, invite-only switch |
+| Google sign-in | 1 | ⏸ Removed | Built then removed 2026-10-31 — needs hosting, a verified domain and privacy/terms pages first |
 | API authentication & hardening | — | ✅ Built | Session required on every non-sign-in route (router-level, test walks all routes); fresh session on sign-in; HttpOnly/SameSite cookie, Secure in production, 7-day expiry; CSRF origin check; login throttling; constant-time-ish failure; upload size cap; security headers; docs off and unsafe defaults refused in production |
 | Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7). PDF or SBI's Excel download (.xlsx, .xls, or HTML/TSV saved as .xls; columns found by header name). Excel path untested against a real SBI file yet; password-protected Excel not supported |
 | SBI extractor (table read + narration normaliser) | 1 | 🟡 Partial | Fitted to a real SBI statement (Jan 2026, masked): 57/57 rows, reconciles to ₹0.00 against the Statement Summary. That statement held only UPI rows; NEFT/IMPS/ATM/ACH/charges/interest in the real layout are still untested |
@@ -188,7 +188,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | Delete an upload and its rows | — | ✅ Built | `DELETE /uploads/{id}`; resets onboarding if no history is left |
 | Automated tests | — | ✅ Started | `backend/tests/` — extractor, preview/commit, dedupe, corrections, delete, budgets (pytest, sample PDFs) |
 
-**API surface today:** `GET /auth/config`, `POST /auth/google`, `POST /auth/logout`, `GET /auth/me` · `POST /upload/preview`, `POST /upload/commit` · `GET /uploads`, `DELETE /uploads/{id}` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets?month=YYYY-MM`, `PUT /budgets` · `GET /health`.
+**API surface today:** `GET /auth/config`, `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` · `POST /upload/preview`, `POST /upload/commit` · `GET /uploads`, `DELETE /uploads/{id}` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets?month=YYYY-MM`, `PUT /budgets` · `GET /health`.
 
 **Known issues**
 

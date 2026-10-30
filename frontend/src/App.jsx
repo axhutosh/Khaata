@@ -30,6 +30,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Login />} />
       <Route path="/upload" element={<Private bare><Upload /></Private>} />
       <Route path="/" element={<Private><Dashboard /></Private>} />
       <Route path="/transactions" element={<Private><Transactions /></Private>} />

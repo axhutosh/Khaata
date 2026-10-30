@@ -1,69 +1,61 @@
-"""Sign-in is Google only (Google Identity Services). There are no passwords to guess or leak.
-First sign-in creates the person's own account; every query is scoped to it."""
+"""Email + password accounts: sign up, sign in, sign out. Anyone can create an account
+(OPEN_SIGNUP) and gets their own, isolated Khaata; every query is scoped to it."""
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import User
 from ..auth import current_user, login_user
-from ..security import login_throttle, client_ip
+from ..passwords import hash_password, password_problem, verify_password
+from ..security import client_ip, login_throttle, signup_throttle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-NO_PASSWORD = "!google-only"  # stored in users.password_hash: there is no password sign-in
 
-
-class GoogleIn(BaseModel):
-    credential: str = Field(min_length=20, max_length=4096)  # the ID token from Google's button
+class Credentials(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
 
 
 def _me(user: User) -> dict:
-    return {"email": user.email, "onboarded": user.onboarded, "google": bool(user.google_sub)}
+    return {"email": user.email, "onboarded": user.onboarded}
 
 
 @router.get("/config")
 def config():
-    """Public: what the login page needs to render (no secrets)."""
-    return {"google_client_id": settings.GOOGLE_CLIENT_ID or None}
+    """Public: what the sign-in page needs to know."""
+    return {"open_signup": settings.OPEN_SIGNUP}
 
 
-def verify_google_token(credential: str) -> dict:
-    """Check the ID token's signature, issuer, audience and expiry with Google's library."""
-    from google.auth.transport import requests as google_requests
-    from google.oauth2 import id_token
-    return id_token.verify_oauth2_token(credential, google_requests.Request(), settings.GOOGLE_CLIENT_ID)
-
-
-@router.post("/google")
-def google(body: GoogleIn, request: Request, db: Session = Depends(get_db)):
-    if not settings.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=404, detail="Google sign-in isn't configured.")
-    # throttle per address, so someone else's failed attempts can't lock the owner out
-    ip = client_ip(request)
-    key = f"google:{ip}"
-    login_throttle.check(ip, key)
-    try:
-        claims = verify_google_token(body.credential)
-    except ValueError:
-        login_throttle.fail(ip, key)
-        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
-
-    email = (claims.get("email") or "").lower()
-    if not claims.get("email_verified") or not email:
-        raise HTTPException(status_code=403, detail="Your Google account's email isn't verified.")
-    if not settings.may_sign_in(email):
-        raise HTTPException(status_code=403, detail="This Khaata is invite-only, and this Google account isn't on the list.")
-
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:  # first sign-in: a new, empty account of their own
-        user = User(email=email, password_hash=NO_PASSWORD)
-        db.add(user)
-    if user.google_sub and user.google_sub != claims["sub"]:
-        raise HTTPException(status_code=403, detail="This email is linked to a different Google account.")
-    user.google_sub = claims["sub"]
+@router.post("/signup")
+def signup(body: Credentials, request: Request, db: Session = Depends(get_db)):
+    email, ip = body.email.lower(), client_ip(request)
+    signup_throttle.check(ip, f"signup:{ip}")
+    if not settings.may_sign_up(email):
+        raise HTTPException(status_code=403, detail="New accounts are invite-only right now.")
+    problem = password_problem(body.password, email)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists. Sign in instead.")
+    signup_throttle.fail(ip, f"signup:{ip}")  # counts every account made from this address
+    user = User(email=email, password_hash=hash_password(body.password))
+    db.add(user)
     db.commit()
-    login_throttle.succeed(key)
+    login_user(request, user)
+    return _me(user)
+
+
+@router.post("/login")
+def login(body: Credentials, request: Request, db: Session = Depends(get_db)):
+    email, ip = body.email.lower(), client_ip(request)
+    login_throttle.check(ip, email)
+    user = db.query(User).filter(User.email == email).first()
+    if not verify_password(body.password, user.password_hash if user else None):
+        login_throttle.fail(ip, email)
+        raise HTTPException(status_code=401, detail="Wrong email or password.")
+    login_throttle.succeed(email)
     login_user(request, user)
     return _me(user)
 

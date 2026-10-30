@@ -1,30 +1,15 @@
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .database import Base, engine, SessionLocal
-from .models import User
+from .database import Base, engine
 from .auth import current_user
 from . import crypto
 from .security import OriginCheck, SecurityHeaders
 from .routers import auth, upload, uploads, transactions, insights, budgets
-from .routers.auth import NO_PASSWORD
-
-
-def seed_user():
-    if not settings.SEED_EMAIL:
-        return
-    db = SessionLocal()
-    try:
-        email = settings.SEED_EMAIL.lower()
-        if not db.query(User).filter(User.email == email).first():
-            db.add(User(email=email, password_hash=NO_PASSWORD))
-            db.commit()
-    finally:
-        db.close()
 
 
 def migrate_data():
@@ -33,11 +18,6 @@ def migrate_data():
         for table in ("transactions", "merchant_rules", "budgets"):  # category renamed
             conn.execute(text(f"UPDATE {table} SET category = 'P2P Transfer' "
                               "WHERE category = 'Transfer · Person'"))
-        if "google_sub" not in {c["name"] for c in inspect(conn).get_columns("users")}:
-            conn.execute(text("ALTER TABLE users ADD COLUMN google_sub VARCHAR"))
-        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"))
-        # sign-in is Google only: drop any stored password hash so no password route exists
-        conn.execute(text("UPDATE users SET password_hash = :p WHERE password_hash != :p"), {"p": NO_PASSWORD})
         # narrations encrypted at rest; also re-encrypts after a key rotation
         crypto.migrate(conn, settings.DATABASE_URL)
 
@@ -47,7 +27,6 @@ async def lifespan(app: FastAPI):
     settings.check()  # first: the migration below needs DATA_KEY
     Base.metadata.create_all(bind=engine)
     migrate_data()
-    seed_user()
     yield
 
 
@@ -68,7 +47,7 @@ app.add_middleware(
 app.add_middleware(OriginCheck, allowed=settings.CORS_ORIGINS)
 app.add_middleware(SecurityHeaders)
 
-# public: sign-in only. Everything else needs a session, enforced on the whole router so a
+# public: sign-up / sign-in only. Everything else needs a session, enforced on the whole router so a
 # new endpoint can't ship unauthenticated by forgetting the dependency.
 app.include_router(auth.router)
 for r in (upload, uploads, transactions, insights, budgets):

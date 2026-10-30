@@ -24,18 +24,13 @@ class Settings:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-change-me")
     CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 
-    # Optional: pre-create this account at startup (it links to Google on first sign-in).
-    SEED_EMAIL: str = os.getenv("SEED_EMAIL", "").strip()
-
-    # Google sign-in (Google Identity Services) is the only way in. Required.
-    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    # Open sign-up: any verified Google account gets its own, separate Khaata.
-    # Set OPEN_SIGNUP=false to make it invite-only (just the ALLOWED_EMAILS list).
+    # Open sign-up: anyone can create an account (email + password) and gets their own,
+    # separate Khaata. OPEN_SIGNUP=false makes new accounts invite-only (ALLOWED_EMAILS).
     OPEN_SIGNUP: bool = _bool("OPEN_SIGNUP", True)
     ALLOWED_EMAILS: set[str] = {e.strip().lower() for e in os.getenv("ALLOWED_EMAILS", "").split(",") if e.strip()}
 
-    def may_sign_in(self, email: str) -> bool:
-        return self.OPEN_SIGNUP or email in self.ALLOWED_EMAILS or email == self.SEED_EMAIL.lower()
+    def may_sign_up(self, email: str) -> bool:
+        return self.OPEN_SIGNUP or email in self.ALLOWED_EMAILS
 
     # Encrypts stored bank narrations (app/crypto.py). Required. Comma-separate to rotate.
     DATA_KEY: str = os.getenv("DATA_KEY", "").strip()
@@ -57,8 +52,6 @@ class Settings:
         if not self.DATA_KEY:  # without it nothing can be stored or read: refuse in every mode
             raise RuntimeError("DATA_KEY is not set. Generate one and add it to backend/.env: "
                                "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
-        if not self.GOOGLE_CLIENT_ID:
-            problems.append("GOOGLE_CLIENT_ID is empty, so nobody can sign in (see README: Google sign-in)")
         if self.production and not self.SESSION_SECURE:
             problems.append("SESSION_SECURE must be on in production (cookies over HTTPS only)")
         if problems and self.production:

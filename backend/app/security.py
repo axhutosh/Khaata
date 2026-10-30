@@ -79,7 +79,7 @@ class LoginThrottle:
                 oldest = min(q[0] for q in (by_email, by_ip) if q)
                 retry = max(1, int(self.window - (now - oldest)))
                 raise HTTPException(status_code=429, headers={"Retry-After": str(retry)},
-                                    detail=f"Too many failed sign-in attempts. Try again in {retry // 60 + 1} minutes.")
+                                    detail=f"Too many attempts. Try again in {retry // 60 + 1} minutes.")
 
     def fail(self, ip: str, email: str) -> None:
         now = time.monotonic()
@@ -97,6 +97,8 @@ class LoginThrottle:
 
 
 login_throttle = LoginThrottle()
+# new accounts: at most 10 an hour from one address (the per-email limit isn't used here)
+signup_throttle = LoginThrottle(limit=10, ip_limit=10, window=60 * 60)
 
 
 def client_ip(request: Request) -> str:

@@ -1,156 +1,78 @@
-# Khaata — Spend Tracker
+<p align="center">
+  <img src="branding/khaata-logo.svg" alt="Khaata" width="96" height="96" />
+</p>
 
-Upload an SBI bank-statement PDF (password-protected is fine), and Khaata decrypts it,
-extracts transactions, balance-checks them, categorises merchants, and shows daily /
-monthly / yearly insights. Solo, single-user v1.
+<h1 align="center">Khaata</h1>
 
-This repo is the Phase-1 scaffold: a working backend (FastAPI + the SBI extractor +
-insight queries) and a React frontend wired to it.
+<p align="center"><b>Every rupee, finally accounted for.</b></p>
 
-**The plan lives in the repo:**
-- `CLAUDE.md` — orientation for a Claude Code session (architecture, decisions, conventions, what's next).
-- `docs/PRD.md` — scope, data model, insights, parsing pipeline, decisions, build phases.
-- `docs/DESIGN.md` — design system and the six screens.
+<p align="center">
+  Upload your bank statement and Khaata turns it into a clear picture of where your money goes —<br/>
+  shops, people, subscriptions and savings, every number balance-checked to the paisa.
+</p>
 
-```
-khaata-app/
-├── backend/            FastAPI app
-│   ├── app/
-│   │   ├── main.py         app + middleware + routers
-│   │   ├── config.py       settings (env)
-│   │   ├── database.py     SQLAlchemy engine/session (SQLite default)
-│   │   ├── models.py       User, Transaction, MerchantRule, Budget
-│   │   ├── auth.py         session login + password hashing
-│   │   ├── extractor.py    decrypt → parse → categorise → balance check  (SBI)
-│   │   ├── insights.py     daily/monthly/yearly, categories, recurring, budgets
-│   │   └── routers/        auth, upload, transactions, insights, budgets
-│   ├── samples/        synthetic SBI statements for testing
-│   └── requirements.txt
-└── frontend/           Vite + React
-    └── src/
-        ├── api.js          API client (proxied to backend)
-        ├── App.jsx         routes + auth guard
-        ├── components/Shell.jsx
-        └── pages/          Login, Upload, Dashboard, Transactions, Subscriptions, Budgets
-```
+---
 
-## Run it
+## What it does
 
-**1. Backend** (Python 3.11+)
+**Reads your statement as it is.** Drop in the PDF or Excel file you download from your bank —
+password-protected is fine. Your statement password is used once to unlock the file, then
+forgotten.
 
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt   # app deps + pytest
-cp .env.example .env            # set SECRET_KEY, SEED_EMAIL and GOOGLE_CLIENT_ID
-uvicorn app.main:app --reload --reload-dir app   # http://localhost:8000  (docs at /docs)
-```
+**Checks every rupee.** Opening balance + money in − money out must equal the closing balance.
+If a single row is missing or misread, Khaata tells you before anything is saved.
 
-On first run it creates the SQLite DB and seeds one user from `.env`.
+**You review before it's saved.** See every transaction, fix a category in one click, and
+Khaata remembers your choice for every future statement.
 
-**2. Frontend** (Node 18+)
+**Knows shops from people.** UPI payments are split into what you spent at shops and services
+and what you sent to friends and family, so your spending isn't hidden inside transfers.
 
-```bash
-cd frontend
-npm install
-npm run dev                     # http://localhost:5173
-```
+**Shows where it went.** Daily, monthly and yearly views: money in vs out, spending by
+category, top merchants, the people you pay, your busiest spending days, small payments that
+quietly add up, and your balance over time.
 
-The Vite dev server proxies `/api/*` to the backend, so sessions are same-origin.
+**Finds your subscriptions.** Netflix, SIPs, bills, EMIs and regular transfers — with the next
+expected charge, price rises, and the ones that may have stopped.
 
-**3. Tests**
+**Notices things for you.** Unusually large payments, possible double charges, bank fees, low
+balances and more, in plain language.
 
-```bash
-cd backend
-python -m pytest
-```
+**Keeps you on budget.** Monthly limits per category, with progress and a month-end projection.
 
-Uses a throwaway SQLite DB and the sample PDFs. There are no migrations yet: after a schema
-change, delete `backend/khaata.db` and restart.
+## Private by design
 
-## Try the flow
+- Your Khaata is yours alone — every account is sealed off from every other.
+- Bank details in your transactions are encrypted at rest.
+- Your statement password is never stored, and the uploaded file is discarded after reading.
+- No ads, no selling data.
 
-1. Open http://localhost:5173 and continue with Google (set up below under Security).
-2. Upload `backend/samples/SBI_sample_locked.pdf` — password **`ASHUT1947`**.
-3. Review the parsed rows (balance check banner, categories, duplicates) and fix any category —
-   nothing is saved until **Looks good — save**. Then land on the Dashboard.
-4. Try the Daily / Monthly / Yearly toggle, Transactions, Subscriptions, Budgets.
+## Banks
 
-(`SBI_sample.pdf` is the same statement without a password, to test the unlocked path.)
+| Bank | Status |
+| --- | --- |
+| State Bank of India (SBI) | ✅ Supported — PDF and Excel statements |
+| HDFC Bank · ICICI Bank · Axis Bank · Kotak · Bank of Baroda · PNB | Coming soon |
 
-## Security
+## Brand
 
-- **Sign-in is Google only.** There are no passwords to guess, reuse or leak. Any verified
-  Google account can sign up (`OPEN_SIGNUP=true`, the default) and gets its own account; set
-  `OPEN_SIGNUP=false` to allow only `ALLOWED_EMAILS`.
-- **Accounts are sealed off from each other.** Every query is scoped to the signed-in user;
-  `tests/test_isolation.py` proves one user can't read, change, delete or replay another's data.
-- **Every API needs a session** except sign-in (`/auth/google`, `/auth/config`, `/auth/logout`)
-  and `/health`. Enforced per router in `app/main.py` and checked by a test that
-  walks every route.
-- **Session**: signed, HttpOnly, SameSite=Lax cookie (`khaata_session`), 7 days by default;
-  `Secure` (HTTPS-only) in production. Signing in starts a fresh session.
-- **Cross-site requests**: writes from an origin outside `CORS_ORIGINS` are refused (CSRF).
-- **Throttling**: 5 failed Google sign-ins from one address in 15 minutes pauses sign-in from
-  that address for the rest of the window (other addresses, including yours, are unaffected).
-- **Uploads**: capped at `MAX_UPLOAD_MB`; the statement password is used once and never stored.
-- **Encryption at rest**: bank narrations (UPI IDs, account fragments, names, reference numbers)
-  are stored as Fernet tokens (AES + HMAC) keyed by `DATA_KEY` in `.env`, never in the database;
-  the duplicate-detection hash is an HMAC under the same key. Amounts, dates, merchants and
-  categories stay readable so insights work. **Back up `DATA_KEY`** — without it the narrations
-  can't be recovered. Rotate by putting a new key first (`DATA_KEY=new,old`) and restarting;
-  startup re-encrypts everything, then remove the old key. Startup also encrypts any older
-  plaintext rows, saving a database backup first (that backup is plaintext — delete it once
-  you've checked the app).
-- **Responses**: `no-store`, `nosniff`, `DENY` framing, a locked-down CSP. `/docs` is off in production.
-- **Production** (`ENV=production`) refuses to start with the placeholder `SECRET_KEY`, no
-  `GOOGLE_CLIENT_ID`, or non-HTTPS cookies.
+<p>
+  <img src="branding/khaata-logo.svg" alt="Khaata logo" width="64" height="64" />
+  &nbsp;&nbsp;
+  <img src="branding/khaata-wordmark.svg" alt="Khaata wordmark" height="64" />
+</p>
 
-### Google sign-in
+A jade tile with a rounded **K** — the white stem and upper arm, a mint lower arm: money in,
+money out. A calm "digital ledger" look: warm off-white paper, near-black ink, one deep-jade
+accent for money, and tabular figures so every number lines up.
 
-1. In [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials),
-   create an **OAuth client ID**, type **Web application**.
-2. Under **Authorized JavaScript origins** add `http://localhost:5173` (and your real domain later).
-   No redirect URI is needed.
-3. Put the client ID in `backend/.env` as `GOOGLE_CLIENT_ID=…apps.googleusercontent.com` and
-   restart the backend.
-4. **To let other people sign in**, open **OAuth consent screen** in the same console and
-   **Publish app** (move it from "Testing" to "In production"). While it's in Testing, only the
-   test users you list there can sign in. Khaata asks only for name and email, which don't need
-   Google's app verification.
+| Colour | Hex | Use |
+| --- | --- | --- |
+| Jade | `#0E7C66` | Brand, money, positive |
+| Mint | `#8FE3C8` | Logo accent |
+| Ink | `#16181D` | Text |
+| Paper | `#F7F6F2` | Background |
+| Spend | `#C2410C` | Money out, over budget |
 
-The login page shows "Continue with Google" — the only way in; for someone new, the same button creates their account. The backend verifies Google's signed ID token
-(signature, audience, expiry, verified email). The first sign-in creates that person's account
-and links their Google account to it; a different Google account for the same email is refused.
-
-## Sharing a real statement safely
-
-To tune the extractor to a real SBI layout without sharing personal data:
-
-```bash
-cd backend
-.venv\Scripts\activate
-# put the PDF in backend/samples/real/  (git-ignored)
-python tools/mask_statement.py samples/real/statement.pdf
-```
-
-It asks for the PDF password (not shown, not stored) and writes `statement.masked.txt` and
-`statement.masked.json` next to it. Names, account/reference numbers, UPI IDs, IFSC and address
-become placeholders (`XXXX`, `9999`); dates, amounts, balances, SBI layout words and well-known
-business names stay. **Read the .txt before sharing.** Use `--keep WORD,WORD` to leave more
-business names visible.
-
-## Decisions baked in (from the PRD)
-
-- **Password:** entered by the user, used once to decrypt, never stored.
-- **SIP → Investments** (excluded from spend); EMIs count as spend; both show under recurring.
-- **Time toggle** on the Dashboard; Transactions uses date-range/search instead.
-- **Onboarding** (Upload) is a first-run step; returning users land on the Dashboard.
-
-## Next
-
-- Replace the synthetic statement with a real (redacted) SBI PDF and tighten `extractor.py`
-  regexes against its exact layout (date format, wrapped narrations, column widths).
-- Add alerts (large spend, new merchant, bank fees) and CSV/PDF export.
-- When adding a second bank, write a new normaliser in `extractor.py`; everything downstream is bank-agnostic.
-```
+Type: **Space Grotesk** for headings and figures, **Inter** for everything else.
+Logo files in every size are in [`branding/`](branding/).

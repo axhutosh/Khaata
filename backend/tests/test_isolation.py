@@ -2,11 +2,11 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import google_token, preview
+from conftest import creds, preview
 
 
-def _sign_in(c, email, sub):
-    assert c.post("/auth/google", json={"credential": google_token(email=email, sub=sub)}).status_code == 200
+def _sign_in(c, email, _):
+    assert c.post("/auth/signup", json=creds(email=email)).status_code == 200
 
 
 def test_users_cannot_see_or_touch_each_others_data(anon):
