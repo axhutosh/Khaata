@@ -84,7 +84,7 @@ To tune the extractor to a real SBI layout without sharing personal data:
 
 ```bash
 cd backend
-.venv\Scriptsctivate
+.venv\Scripts\activate
 # put the PDF in backend/samples/real/  (git-ignored)
 python tools/mask_statement.py samples/real/statement.pdf
 ```
