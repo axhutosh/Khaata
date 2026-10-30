@@ -36,7 +36,7 @@ function useGoogleButton(clientId, onCredential) {
 const PROMISES = [
   ["Reads locked PDFs and Excel", "Your statement password is used once to unlock the file, then forgotten."],
   ["Daily, monthly, yearly", "Shops, people, subscriptions — every statement balance-checked to the paisa."],
-  ["Private by design", "Sign in with Google only. No passwords stored, nothing shared."],
+  ["Private by design", "Your own Khaata, sealed off from everyone else's. No passwords, nothing shared."],
 ];
 
 export default function Login() {
@@ -87,7 +87,7 @@ export default function Login() {
         <div style={{ width: "100%", maxWidth: 360 }}>
           <h2 className="grotesk" style={{ fontSize: 26, margin: "0 0 6px" }}>Welcome to Khaata</h2>
           <p style={{ color: "var(--muted)", fontSize: 14.5, margin: "0 0 26px", lineHeight: 1.55 }}>
-            Sign in with your Google account to continue.
+            Sign in with Google to continue. New here? The same button creates your account.
           </p>
 
           {err && <div className="notice notice-error" role="alert" style={{ marginBottom: 18 }}>{err}</div>}
@@ -114,8 +114,8 @@ export default function Login() {
           )}
 
           <p style={{ fontSize: 12.5, color: "var(--faint)", margin: "28px 0 0", lineHeight: 1.6 }}>
-            Khaata is private: only Google accounts the owner has allowed can sign in. Google shares just
-            your name and email — never your Google password.
+            Every Google account gets its own private Khaata — nobody else can see your statements.
+            Google shares just your name and email, never your Google password.
           </p>
         </div>
       </div>

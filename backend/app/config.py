@@ -24,15 +24,18 @@ class Settings:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-change-me")
     CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 
-    # The owner's account (solo v1): created at startup, signed in to with Google.
-    SEED_EMAIL: str = os.getenv("SEED_EMAIL", "you@email.com")
+    # Optional: pre-create this account at startup (it links to Google on first sign-in).
+    SEED_EMAIL: str = os.getenv("SEED_EMAIL", "").strip()
 
     # Google sign-in (Google Identity Services) is the only way in. Required.
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    # Who may sign in. Solo v1: defaults to the seed email only.
-    ALLOWED_EMAILS: set[str] = {e.strip().lower() for e in
-                                os.getenv("ALLOWED_EMAILS", os.getenv("SEED_EMAIL", "you@email.com")).split(",")
-                                if e.strip()}
+    # Open sign-up: any verified Google account gets its own, separate Khaata.
+    # Set OPEN_SIGNUP=false to make it invite-only (just the ALLOWED_EMAILS list).
+    OPEN_SIGNUP: bool = _bool("OPEN_SIGNUP", True)
+    ALLOWED_EMAILS: set[str] = {e.strip().lower() for e in os.getenv("ALLOWED_EMAILS", "").split(",") if e.strip()}
+
+    def may_sign_in(self, email: str) -> bool:
+        return self.OPEN_SIGNUP or email in self.ALLOWED_EMAILS or email == self.SEED_EMAIL.lower()
 
     SESSION_MAX_AGE: int = int(os.getenv("SESSION_MAX_AGE", str(7 * 24 * 3600)))  # seconds
     SESSION_SECURE: bool = _bool("SESSION_SECURE", ENV == "production")  # cookie only over HTTPS

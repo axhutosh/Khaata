@@ -6,7 +6,7 @@ Read this first. It orients you to the project, the plan, and the conventions.
 
 A personal spend tracker. The user uploads an SBI bank-statement PDF (password-protected
 is fine), and Khaata decrypts it, extracts transactions, balance-checks them, categorises
-merchants, and shows daily / monthly / yearly insights. **Solo, single-user v1.**
+merchants, and shows daily / monthly / yearly insights. **Open to any Google account; each user's data is isolated.**
 
 ## The plan lives in `docs/`
 
@@ -21,7 +21,7 @@ decision in the PRD, flag it rather than silently diverging.
 
 - Store transactions in a DB (history across uploads powers daily/monthly/yearly).
 - User types the statement password; used once to decrypt, **never stored**. No PAN/DOB auto-guessing in v1.
-- **Sign-in is Google only** (no email/password, no sign-up); allow-listed emails via `ALLOWED_EMAILS`.
+- **Sign-in is Google only** (no email/password). **Open sign-up**: any verified Google account gets its own account (`OPEN_SIGNUP`, default on). Every query must stay scoped to `user_id` — `tests/test_isolation.py` guards it.
 - The UI says **SBI only**, other banks "coming soon" (Upload page).
 - SIP → **Investments** (excluded from spend); EMIs → spend (Bills/Loan). Both show under recurring.
 - Daily/Monthly/Yearly toggle is on the **Dashboard only**; Transactions uses date-range + search.

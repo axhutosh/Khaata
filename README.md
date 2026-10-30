@@ -80,8 +80,11 @@ change, delete `backend/khaata.db` and restart.
 
 ## Security
 
-- **Sign-in is Google only.** There are no passwords to guess, reuse or leak; only verified,
-  allow-listed Google accounts get in.
+- **Sign-in is Google only.** There are no passwords to guess, reuse or leak. Any verified
+  Google account can sign up (`OPEN_SIGNUP=true`, the default) and gets its own account; set
+  `OPEN_SIGNUP=false` to allow only `ALLOWED_EMAILS`.
+- **Accounts are sealed off from each other.** Every query is scoped to the signed-in user;
+  `tests/test_isolation.py` proves one user can't read, change, delete or replay another's data.
 - **Every API needs a session** except sign-in (`/auth/google`, `/auth/config`, `/auth/logout`)
   and `/health`. Enforced per router in `app/main.py` and checked by a test that
   walks every route.
@@ -101,14 +104,16 @@ change, delete `backend/khaata.db` and restart.
    create an **OAuth client ID**, type **Web application**.
 2. Under **Authorized JavaScript origins** add `http://localhost:5173` (and your real domain later).
    No redirect URI is needed.
-3. Put the client ID in `backend/.env` as `GOOGLE_CLIENT_ID=…apps.googleusercontent.com`, set
-   `SEED_EMAIL` to your Gmail address, and list who may sign in in `ALLOWED_EMAILS` (defaults to
-   `SEED_EMAIL`). Restart the backend.
+3. Put the client ID in `backend/.env` as `GOOGLE_CLIENT_ID=…apps.googleusercontent.com` and
+   restart the backend.
+4. **To let other people sign in**, open **OAuth consent screen** in the same console and
+   **Publish app** (move it from "Testing" to "In production"). While it's in Testing, only the
+   test users you list there can sign in. Khaata asks only for name and email, which don't need
+   Google's app verification.
 
-The login page shows "Continue with Google" — the only way in. The backend verifies Google's signed ID token
-(signature, audience, expiry, verified email) and only lets allow-listed emails in; the first
-Google sign-in links that Google account to the user, and a different Google account for the
-same email is refused.
+The login page shows "Continue with Google" — the only way in; for someone new, the same button creates their account. The backend verifies Google's signed ID token
+(signature, audience, expiry, verified email). The first sign-in creates that person's account
+and links their Google account to it; a different Google account for the same email is refused.
 
 ## Sharing a real statement safely
 

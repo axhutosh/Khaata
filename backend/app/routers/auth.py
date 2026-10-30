@@ -1,4 +1,5 @@
-"""Sign-in is Google only (Google Identity Services). There are no passwords to guess or leak."""
+"""Sign-in is Google only (Google Identity Services). There are no passwords to guess or leak.
+First sign-in creates the person's own account; every query is scoped to it."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -51,11 +52,11 @@ def google(body: GoogleIn, request: Request, db: Session = Depends(get_db)):
     email = (claims.get("email") or "").lower()
     if not claims.get("email_verified") or not email:
         raise HTTPException(status_code=403, detail="Your Google account's email isn't verified.")
-    if email not in settings.ALLOWED_EMAILS:
-        raise HTTPException(status_code=403, detail="This Google account isn't allowed to use this Khaata.")
+    if not settings.may_sign_in(email):
+        raise HTTPException(status_code=403, detail="This Khaata is invite-only, and this Google account isn't on the list.")
 
     user = db.query(User).filter(User.email == email).first()
-    if user is None:  # an allow-listed email signing in for the first time
+    if user is None:  # first sign-in: a new, empty account of their own
         user = User(email=email, password_hash=NO_PASSWORD)
         db.add(user)
     if user.google_sub and user.google_sub != claims["sub"]:

@@ -14,6 +14,8 @@ from .routers.auth import NO_PASSWORD
 
 
 def seed_user():
+    if not settings.SEED_EMAIL:
+        return
     db = SessionLocal()
     try:
         email = settings.SEED_EMAIL.lower()

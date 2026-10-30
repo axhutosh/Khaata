@@ -93,9 +93,16 @@ def test_google_email_is_case_insensitive(anon):
     assert anon.post("/auth/google", json={"credential": google_token(email="ME@Khaata.in")}).status_code == 200
 
 
-def test_google_rejects_other_emails(anon):
+def test_open_signup_lets_any_verified_google_account_in(anon):
+    r = anon.post("/auth/google", json={"credential": google_token(email="stranger@gmail.com", sub="s-1")})
+    assert r.status_code == 200 and r.json()["email"] == "stranger@gmail.com" and r.json()["onboarded"] is False
+
+
+def test_invite_only_rejects_other_emails(anon, monkeypatch):
+    monkeypatch.setattr(config.settings, "OPEN_SIGNUP", False)
     assert anon.post("/auth/google", json={"credential": google_token(email="stranger@gmail.com")}).status_code == 403
     assert anon.get("/auth/me").status_code == 401
+    assert anon.post("/auth/google", json={"credential": google_token()}).status_code == 200  # listed: fine
 
 
 def test_google_rejects_unverified_email(anon):

@@ -10,7 +10,7 @@ _As of 2026-10-30 · Owner: Ashutosh_
 
 Khaata turns a bank-statement PDF into a clear picture of where money goes. The user signs in, uploads a statement (password-protected is fine), reviews the parsed transactions, and gets daily, monthly and yearly insights.
 
-- **User (v1):** just the builder, single account. Public multi-user is a later decision, made only after the insights prove useful in real use.
+- **User (v1):** open to anyone with a Google account (decided 2026-10-31); each person sees only their own data.
 - **Core promise:** upload once, see everything — categories, top merchants, subscriptions, trends, budgets and alerts — with numbers the user can trust (every statement is balance-checked on import).
 - **Primary input:** PDF statements (full history in one file). SMS capture and the Account Aggregator framework are explicitly deferred.
 
@@ -18,7 +18,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 
 **In scope**
 
-- Google sign-in (only); single user with their own session.
+- Google sign-in (only); anyone with a verified Google account can sign up and gets their own, isolated data.
 - Upload bank-statement PDFs, including password-protected (user enters the password).
 - Decrypt, extract transactions, balance-check, store in a database.
 - Review screen to fix mis-categorised rows before saving.
@@ -33,7 +33,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 - SMS-based capture; Account Aggregator / live bank connections.
 - Password auto-guessing from PAN/DOB (user types the password instead).
 - Scanned-image statements / OCR.
-- Multi-user, sharing, mobile apps, forecasting beyond a simple month-end projection.
+- Sharing between users, mobile apps, forecasting beyond a simple month-end projection.
 
 ## 3. User journey
 
@@ -140,7 +140,7 @@ Since it's one user, the merchant set is small and repetitive, so the dictionary
 **Locked decisions**
 
 - **Storage:** yes — transactions are stored so daily/monthly/yearly history works across uploads.
-- **Sign-in (decided 2026-10-31):** Google sign-in only — no email/password, no sign-up. Only verified emails on `ALLOWED_EMAILS` get in; the owner's account is `SEED_EMAIL`. Public sign-up stays a later decision.
+- **Sign-in (decided 2026-10-31):** Google sign-in only — no email/password. **Open sign-up**: any verified Google account gets its own, separate account on first sign-in (`OPEN_SIGNUP=true`); `OPEN_SIGNUP=false` makes it invite-only via `ALLOWED_EMAILS`. This reverses the earlier single-user-only scope; per-user isolation is proven by `tests/test_isolation.py`.
 - **Password handling:** user types the statement password; used once to decrypt, never stored. No auto-guessing from PAN/DOB in v1.
 - **SIP vs EMI:** SIPs count as **Investments** (wealth, excluded from spend so savings rate stays honest); EMIs count as spend under Bills/Loan. Both still appear under recurring.
 - **Time toggle:** Daily/Monthly/Yearly lives on the Dashboard only; Transactions uses a date-range filter instead.
