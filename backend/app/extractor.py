@@ -11,6 +11,7 @@ from __future__ import annotations
 import io, re, datetime as dt
 from dataclasses import dataclass, asdict
 from decimal import Decimal, InvalidOperation
+from html.parser import HTMLParser
 
 import pikepdf
 import pdfplumber
@@ -90,7 +91,8 @@ def _money(s: str) -> Decimal | None:
 
 
 def _parse_date(s: str) -> dt.date:
-    for fmt in ("%d %b %Y", "%d-%b-%Y", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y"):
+    for fmt in ("%d %b %Y", "%d-%b-%Y", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y",
+                "%d %b %y", "%d-%b-%y"):
         try:
             return dt.datetime.strptime(s.strip(), fmt).date()
         except ValueError:
@@ -112,6 +114,141 @@ def read_pdf(pdf_bytes: bytes) -> Layout:
             tables.extend(page.extract_tables())
             text.append(page.extract_text() or "")
     return Layout(tables=tables, text="\n".join(text))
+
+
+# --------------------------------------------------------------------------- #
+# 3b. Spreadsheet statements (SBI's "Download as Excel")
+# --------------------------------------------------------------------------- #
+class StatementError(ValueError):
+    """A statement we can't open; the message is safe to show the user."""
+
+
+class PasswordNeeded(StatementError):
+    pass
+
+
+class WrongPassword(StatementError):
+    pass
+
+
+def _cell_text(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, (dt.datetime, dt.date)):
+        return v.strftime("%d/%m/%Y")
+    if isinstance(v, float):
+        return f"{v:.2f}"
+    return str(v).strip()
+
+
+class _HTMLTable(HTMLParser):
+    """Some banks' "Excel" downloads are really an HTML table saved as .xls."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows, self._row, self._cell = [], None, None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self._row = []
+        elif tag in ("td", "th") and self._row is not None:
+            self._cell = []
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self._cell is not None:
+            self._row.append(" ".join("".join(self._cell).split()))
+            self._cell = None
+        elif tag == "tr" and self._row is not None:
+            self.rows.append(self._row)
+            self._row = None
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def sheet_rows(data: bytes) -> list[list[str]]:
+    """Every row of a spreadsheet statement as text cells: .xlsx, real .xls, or the
+    HTML / tab-separated text some banks save with an .xls extension."""
+    if data[:2] == b"PK":
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        return [[_cell_text(v) for v in row] for ws in wb.worksheets for row in ws.iter_rows(values_only=True)]
+    if data[:8] == bytes.fromhex("D0CF11E0A1B11AE1"):
+        import xlrd
+        try:
+            book = xlrd.open_workbook(file_contents=data)
+        except Exception:
+            raise StatementError("This Excel file is password-protected or damaged. "
+                                 "Download the statement as PDF instead.")
+        rows = []
+        for sh in book.sheets():
+            for r in range(sh.nrows):
+                cells = []
+                for c in sh.row(r):
+                    if c.ctype == xlrd.XL_CELL_DATE:
+                        cells.append(_cell_text(xlrd.xldate_as_datetime(c.value, book.datemode)))
+                    else:
+                        cells.append(_cell_text(c.value))
+                rows.append(cells)
+        return rows
+    text = data.decode("utf-8-sig", errors="replace")
+    if "<t" in text.lower():
+        p = _HTMLTable()
+        p.feed(text)
+        return p.rows
+    import csv
+    delim = "\t" if text.count("\t") > text.count(",") else ","
+    return [[c.strip() for c in row] for row in csv.reader(io.StringIO(text), delimiter=delim)]
+
+
+def _find(header: list[str], *keys: str, avoid: str = "") -> int | None:
+    for i, h in enumerate(header):
+        if any(k in h for k in keys) and not (avoid and avoid in h):
+            return i
+    return None
+
+
+def read_spreadsheet(data: bytes) -> Layout:
+    return layout_from_rows(sheet_rows(data))
+
+
+def layout_from_rows(rows: list[list[str]]) -> Layout:
+    """Find the transaction header row by its column names and re-emit every row below it
+    in the PDF table's column order (txn date, value date, description, ref, debit, credit,
+    balance), so the same row parser handles both."""
+    text = "\n".join(" ".join(c for c in r if c) for r in rows)
+    for i, row in enumerate(rows):
+        header = [c.lower() for c in row]
+        if not (_find(header, "balance") is not None and _find(header, "debit", "withdrawal") is not None):
+            continue
+        cols = [_find(header, "txn date", "transaction date", "tran date", "post date", "date", avoid="value"),
+                _find(header, "value date"),
+                _find(header, "description", "narration", "particulars", "details", "remarks"),
+                _find(header, "ref", "cheque", "chq"),
+                _find(header, "debit", "withdrawal"),
+                _find(header, "credit", "deposit"),
+                _find(header, "balance")]
+        if cols[0] is None or cols[2] is None:
+            continue
+        table = [[(r[c] if c is not None and c < len(r) else "") for c in cols] for r in rows[i + 1:]]
+        return Layout(tables=[table], text=text)
+    raise StatementError("Couldn't find the transactions table in this spreadsheet. Is it an SBI statement?")
+
+
+def load_statement(data: bytes, password: str | None = None) -> Layout:
+    """Bytes of an uploaded statement (PDF or spreadsheet) -> Layout. The password is used
+    once, to decrypt a PDF, and goes no further."""
+    if data[:5] == b"%PDF-":
+        if is_encrypted(data) and not password:
+            raise PasswordNeeded("PDF is password protected. Provide the password.")
+        try:
+            return read_pdf(decrypt_to_bytes(data, password))
+        except ValueError as e:
+            if "password" in str(e):
+                raise WrongPassword(str(e))
+            raise StatementError(str(e))
+    return read_spreadsheet(data)
 
 
 def _unwrap(cell: str | None) -> str:
@@ -158,10 +295,53 @@ _SBI_LEAD = re.compile(r"^(WDL|DEP)\s+[A-Z]{2,4}\s+(?=\S*/)", re.I)
 
 # every category the pipeline can assign; the Review screen offers these
 CATEGORIES = [
-    "Food & Dining", "Groceries", "Shopping", "Bills & Utilities", "Entertainment",
-    "Transport", "Insurance", "Cash", "Bank Fees",
+    "Food & Dining", "Groceries", "Shopping", "Bills & Utilities", "Health & Medical",
+    "Transport", "Fuel", "Travel", "Entertainment", "Personal Care", "Education",
+    "Rent & Housing", "Insurance", "Cash", "Bank Fees",
     "Investments", "Income", "Cashback", "Transfer · Person", "Uncategorised",
 ]
+
+# Last rule layer before giving up: words that say what a small business sells. Most UPI
+# payees are local shops with no dictionary entry, but many name their trade
+# ("SRI SAI MEDICALS", "BALAJI KIRANA"). First matching category wins, so order matters.
+KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("Health & Medical", ("medical", "medicals", "pharmacy", "pharma", "chemist", "chemists", "drug",
+                          "drugs", "clinic", "hospital", "hospitals", "diagnostic", "diagnostics", "lab",
+                          "labs", "dental", "healthcare", "health", "medplus", "apollo", "netmeds",
+                          "pharmeasy", "1mg", "optical", "opticals", "ayurveda", "ayurvedic")),
+    ("Fuel", ("petrol", "petroleum", "fuel", "fuels", "filling", "hpcl", "bpcl", "iocl", "indianoil",
+              "cng", "diesel")),
+    ("Groceries", ("kirana", "provision", "provisions", "grocery", "groceries", "supermarket", "mart",
+                   "vegetable", "vegetables", "fruits", "dairy", "milk", "daily needs", "general store",
+                   "departmental", "bazaar", "bazar")),
+    ("Food & Dining", ("cafe", "restaurant", "restaurants", "hotel", "dhaba", "bakery", "bakers",
+                       "sweets", "sweet", "mithai", "biryani", "pizza", "kitchen", "foods", "food",
+                       "juice", "tea", "chai", "canteen", "mess", "tiffin", "eatery", "bhojanalaya",
+                       "caterers", "snacks", "burger", "chinese", "dosa", "idli", "chaat", "momos",
+                       "icecream", "ice cream", "coffee")),
+    ("Personal Care", ("salon", "saloon", "parlour", "parlor", "beauty", "spa", "barber", "hair",
+                       "unisex", "cosmetics")),
+    ("Education", ("school", "college", "university", "academy", "coaching", "tuition", "tutorial",
+                   "institute", "classes", "education", "stationery", "stationers", "books")),
+    ("Bills & Utilities", ("electricity", "recharge", "broadband", "dth", "postpaid", "prepaid",
+                           "fibernet", "internet", "wifi", "bill", "bills", "power", "water")),
+    ("Transport", ("metro", "auto", "taxi", "cab", "cabs", "parking", "fastag", "toll")),
+    ("Travel", ("travels", "tours", "tour", "resort", "airlines", "airways", "railway", "bus", "yatra",
+                "holidays")),
+    ("Entertainment", ("cinema", "cinemas", "pvr", "inox", "movies", "multiplex", "gaming", "games")),
+    ("Shopping", ("fashion", "garments", "textiles", "textile", "footwear", "shoes", "electronics",
+                  "mobiles", "boutique", "collection", "jewellers", "jewellery", "hardware", "furniture",
+                  "gifts", "toys")),
+    ("Rent & Housing", ("rent", "rental", "maintenance", "society", "hostel")),
+]
+
+
+def _keyword_category(name: str) -> str | None:
+    words = f" {re.sub(r'[^a-z0-9]+', ' ', name.lower())} "
+    for category, keys in KEYWORDS:
+        if any(f" {k} " in words for k in keys):
+            return category
+    return None
 
 # seed dictionary: cleaned-token -> (merchant, category). Grows from user corrections.
 SEED_RULES = {
@@ -234,7 +414,7 @@ def _match(name: str, rules: dict) -> tuple[str, str]:
             return rules[hit[0]]
     except Exception:
         pass
-    return name.strip().title(), "Uncategorised"
+    return name.strip().title(), _keyword_category(name) or "Uncategorised"
 
 
 def normalise(desc: str, rules: dict | None = None) -> tuple[str, str, str, str]:

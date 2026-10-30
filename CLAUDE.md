@@ -66,4 +66,4 @@ live in **`docs/PRD.md` §9** — keep it current as things ship.
 
 ## Run
 
-See `README.md`. Backend: `uvicorn app.main:app --reload`. Frontend: `npm run dev`.
+See `README.md`. Backend: `uvicorn app.main:app --reload --reload-dir app` (without `--reload-dir` it also watches `.venv`). Frontend: `npm run dev`.

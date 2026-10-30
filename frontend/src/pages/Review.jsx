@@ -1,8 +1,85 @@
 import { useMemo, useState } from "react";
 import { inr, inrExact } from "../api";
+import { CategoryDot, QUICK_PICKS } from "../categories";
 
 const AMBER = { bg: "#fdf3e7", line: "#f0e2c9", ink: "#92600f" };
 const JADE = { bg: "#ecf6f1", line: "#cde7db", ink: "#0a5f4e" };
+
+// Most UPI payees are local shops no rule can know. Categorise each one once here,
+// biggest spend first; the choice becomes a rule for every future upload.
+function PayeePanel({ rows, categories, categoryOf, setCategory }) {
+  const payees = useMemo(() => {
+    const by = new Map();
+    for (const r of rows) {
+      if (r.duplicate || r.category !== "Uncategorised") continue;
+      const p = by.get(r.merchant) || { row: r, merchant: r.merchant, kind: r.counterparty_kind, count: 0, total: 0, sample: r.raw_narration };
+      p.count += 1;
+      p.total += Number(r.amount);
+      by.set(r.merchant, p);
+    }
+    return [...by.values()].sort((a, b) => b.total - a.total);
+  }, [rows]);
+  const [showAll, setShowAll] = useState(false);
+  if (!payees.length) return null;
+
+  const done = payees.filter((p) => categoryOf(p.row) !== "Uncategorised").length;
+  const shown = showAll ? payees : payees.slice(0, 8);
+
+  return (
+    <div className="card" style={{ padding: "18px 22px", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
+        <h2 style={{ fontSize: 16, margin: 0 }}>Who are these payees?</h2>
+        <span className="num" style={{ fontSize: 13, color: done === payees.length ? "var(--accent-dark)" : AMBER.ink, fontWeight: 600 }}>
+          {done} of {payees.length} categorised
+        </span>
+      </div>
+      <p style={{ fontSize: 13.5, color: "var(--muted)", margin: "0 0 10px" }}>
+        Khaata couldn't tell what these sell. Pick once per payee — it applies to all their payments and is remembered.
+      </p>
+      <div style={{ height: 6, background: "#f0efea", borderRadius: 4, marginBottom: 6 }} aria-hidden="true">
+        <div style={{ width: `${(done / payees.length) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 4, transition: "width .2s" }} />
+      </div>
+
+      {shown.map((p) => {
+        const current = categoryOf(p.row);
+        const picked = current !== "Uncategorised";
+        return (
+          <div key={p.merchant} style={{ padding: "14px 0", borderTop: "1px solid #f2f1ec" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 9 }}>
+              <span style={{ fontWeight: 600 }}>{p.merchant}</span>
+              {p.kind === "person" && <span className="pill" style={{ background: "#eef0f4", color: "var(--muted)" }}>Person</span>}
+              <span className="num" style={{ fontSize: 13, color: "var(--muted)" }}>
+                {p.count} payment{p.count > 1 ? "s" : ""} · {inr(p.total)}
+              </span>
+              {picked && <span style={{ fontSize: 12.5, color: "var(--accent-dark)", fontWeight: 600 }}>✓ {current}</span>}
+            </div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label={`Category for ${p.merchant}`}>
+              {QUICK_PICKS.map((c) => (
+                <button key={c} className={"chip" + (current === c ? " on" : "")} aria-pressed={current === c}
+                  onClick={() => setCategory(p.row, current === c ? "Uncategorised" : c)}>
+                  <CategoryDot category={c} />{c === "Transfer · Person" ? "A person" : c}
+                </button>
+              ))}
+              <select className="chip" value={QUICK_PICKS.includes(current) || !picked ? "" : current}
+                onChange={(e) => e.target.value && setCategory(p.row, e.target.value)}
+                aria-label={`More categories for ${p.merchant}`}
+                style={!QUICK_PICKS.includes(current) && picked ? { background: "var(--ink)", color: "#fff", borderColor: "var(--ink)" } : {}}>
+                <option value="">More…</option>
+                {categories.filter((c) => !QUICK_PICKS.includes(c) && c !== "Uncategorised").map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+        );
+      })}
+
+      {payees.length > 8 && (
+        <button className="link-btn" style={{ marginTop: 8, fontSize: 13.5 }} onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Show fewer" : `Show all ${payees.length} payees`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // The trust step: nothing is saved until "Looks good — save".
 export default function Review({ preview, busy, onSave, onCancel }) {
@@ -58,6 +135,9 @@ export default function Review({ preview, busy, onSave, onCancel }) {
         </label>
       </div>
 
+      <PayeePanel rows={rows} categories={categories} categoryOf={categoryOf} setCategory={setCategory} />
+
+      <h2 style={{ fontSize: 15, margin: "4px 0 10px" }}>All transactions</h2>
       <div className="card" style={{ overflow: "auto", marginBottom: 18 }}>
         <table>
           <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
@@ -98,7 +178,13 @@ export default function Review({ preview, busy, onSave, onCancel }) {
         </table>
       </div>
 
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+      <div style={{ position: "sticky", bottom: 0, display: "flex", gap: 10, justifyContent: "flex-end", alignItems: "center",
+        padding: "14px 0", background: "linear-gradient(to top, var(--ground) 75%, transparent)", flexWrap: "wrap" }}>
+        {flagged > 0 && (
+          <span style={{ fontSize: 13, color: AMBER.ink, marginRight: "auto" }}>
+            {flagged} row{flagged > 1 ? "s" : ""} still uncategorised — fine to save; fix them later in Transactions.
+          </span>
+        )}
         <button className="btn btn-ghost" onClick={onCancel} disabled={busy}>Start over</button>
         <button className="btn" onClick={() => onSave(corrections)} disabled={busy}>
           {busy ? "Saving…" : fresh.length ? `Looks good — save ${fresh.length}` : "Nothing new — finish"}

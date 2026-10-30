@@ -43,7 +43,7 @@ cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt   # app deps + pytest
 cp .env.example .env            # edit SEED_EMAIL / SEED_PASSWORD / SECRET_KEY
-uvicorn app.main:app --reload   # http://localhost:8000  (docs at /docs)
+uvicorn app.main:app --reload --reload-dir app   # http://localhost:8000  (docs at /docs)
 ```
 
 On first run it creates the SQLite DB and seeds one user from `.env`.

@@ -111,8 +111,12 @@ REAL = sorted((pathlib.Path(__file__).resolve().parent.parent / "samples" / "rea
 @pytest.mark.parametrize("path", REAL, ids=[p.stem for p in REAL])
 def test_real_masked_statement_reconciles(path):
     pages = json.loads(path.read_text(encoding="utf-8"))["pages"]
-    tables = [t for p in pages for t in p["tables"]]
-    text = "\n".join("\n".join(p["lines"]) for p in pages)
+    if pages[0].get("kind") == "sheet":  # masked spreadsheet: raw rows, map columns first
+        layout = extractor.layout_from_rows(pages[0]["tables"][0])
+        tables, text = layout.tables, layout.text
+    else:
+        tables = [t for p in pages for t in p["tables"]]
+        text = "\n".join("\n".join(p["lines"]) for p in pages)
     txns = extractor.parse_tables(tables)
     dated_rows = sum(1 for t in tables for r in t if r and r[0] and extractor._DATE.match(extractor._unwrap(r[0])))
     assert len(txns) == dated_rows > 0
@@ -122,3 +126,73 @@ def test_real_masked_statement_reconciles(path):
     assert check["reconciles"], check
     assert all(t.category in extractor.CATEGORIES for t in txns)
     assert not any(t.merchant.upper().startswith(("WDL", "DEP", "UPI/")) for t in txns)
+
+
+# --------------------------------------------------------------------------- #
+# Spreadsheet downloads: same rows, found by header names wherever they sit
+# --------------------------------------------------------------------------- #
+SHEET = [
+    ["Account Name", ":", "Mr. Test User"],
+    ["Account Number", ":", "00000000000"],
+    [],
+    ["Txn Date", "Value Date", "Description", "Ref No./Cheque No.", "Debit", "Credit", "Balance"],
+    *[[c.replace("\n", " ") if isinstance(c, str) else c for c in r] for r in TABLE[1:-1]],
+    [],
+    ["Statement Summary : 01-01-2026 To 31-01-2026"],
+    ["Brought Forward( )", "Dr Count", "Cr Count", "Total Debits( )", "Total Credits( )", "Closing Balance( )"],
+    ["454.94CR", "5", "1", "754.94", "2,000.00", "1,700.00CR"],
+]
+
+
+def _check_sheet(data: bytes):
+    layout = extractor.load_statement(data)
+    txns = extractor.parse_tables(layout.tables)
+    assert len(txns) == 6
+    s = extractor.statement_summary(layout.text)
+    assert extractor.balance_check(txns, s["opening"], s["closing"])["reconciles"]
+    assert {t.merchant for t in txns} >= {"Swiggy", "Netflix"}
+
+
+def test_xlsx_statement():
+    import io as _io
+    import datetime as _dt
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in SHEET:
+        row = list(r)
+        if row and extractor._DATE.match(str(row[0])):  # real Excel cells: dates and numbers
+            d = _dt.datetime.strptime(row[0], "%d/%m/%Y")
+            row[0] = row[1] = d
+            row[4:7] = [float(v.replace(",", "")) if v != "-" else None for v in row[4:7]]
+        ws.append(row)
+    buf = _io.BytesIO()
+    wb.save(buf)
+    _check_sheet(buf.getvalue())
+
+
+def test_html_disguised_as_xls():
+    html = "<html><body><table>" + "".join(
+        "<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in SHEET) + "</table></body></html>"
+    _check_sheet(html.encode())
+
+
+def test_tab_separated_text():
+    _check_sheet("\n".join("\t".join(r) for r in SHEET).encode())
+
+
+def test_not_a_statement():
+    with pytest.raises(extractor.StatementError):
+        extractor.load_statement(b"just,some\ncsv,text\n")
+
+
+@pytest.mark.parametrize("name, category", [
+    ("SRI SAI MEDICALS", "Health & Medical"),
+    ("BALAJI KIRANA STORE", "Groceries"),
+    ("HP PETROL PUMP", "Fuel"),
+    ("STAR UNISEX SALON", "Personal Care"),
+    ("GUPTA SWEETS", "Food & Dining"),
+    ("RAMESH KUMAR", "Uncategorised"),
+])
+def test_keyword_categories(name, category):
+    assert extractor._match(name, extractor.SEED_RULES)[1] == category

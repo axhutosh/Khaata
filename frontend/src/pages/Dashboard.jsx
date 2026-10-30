@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { api, inr } from "../api";
-
-const CAT_COLORS = {
-  "Food & Dining": "#E2663B", "Shopping": "#3B6FE2", "Bills & Utilities": "#0E9488",
-  "Groceries": "#4F9D3A", "Entertainment": "#D4477E", "Transport": "#7C4DE2",
-  "Insurance": "#B08A2E", "Cash": "#8A9099", "Uncategorised": "#B0B4BB",
-};
-const color = (c, i) => CAT_COLORS[c] || ["#E2663B", "#3B6FE2", "#0E9488", "#4F9D3A", "#D4477E", "#7C4DE2"][i % 6];
+import { catColor as color } from "../categories";
 
 export default function Dashboard() {
   const [period, setPeriod] = useState("month");

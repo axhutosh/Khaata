@@ -41,16 +41,13 @@ async def preview(
     db: Session = Depends(get_db),
 ):
     data = await file.read()
-
-    if extractor.is_encrypted(data) and not password:
-        raise HTTPException(status_code=422, detail="PDF is password protected. Provide the password.")
     try:
-        pdf_bytes = extractor.decrypt_to_bytes(data, password)
-    except ValueError as e:
-        status = 401 if "password" in str(e) else 422
-        raise HTTPException(status_code=status, detail=str(e))
+        layout = extractor.load_statement(data, password)
+    except extractor.WrongPassword as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except extractor.StatementError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-    layout = extractor.read_pdf(pdf_bytes)
     parsed = extractor.parse_tables(layout.tables, rules.user_rules(db, user.id))
     if not parsed:
         raise HTTPException(status_code=422, detail="No transactions found. Is this an SBI statement?")

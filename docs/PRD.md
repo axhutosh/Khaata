@@ -168,11 +168,11 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | --- | --- | --- | --- |
 | Email/password login + session | 1 | ✅ Built | Single seeded user from `.env` |
 | Google sign-in | 1 | ❌ Not built | |
-| Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7) |
+| Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7). PDF or SBI's Excel download (.xlsx, .xls, or HTML/TSV saved as .xls; columns found by header name). Excel path untested against a real SBI file yet; password-protected Excel not supported |
 | SBI extractor (table read + narration normaliser) | 1 | 🟡 Partial | Fitted to a real SBI statement (Jan 2026, masked): 57/57 rows, reconciles to ₹0.00 against the Statement Summary. That statement held only UPI rows; NEFT/IMPS/ATM/ACH/charges/interest in the real layout are still untested |
 | Balance check | 1 | ✅ Built | |
 | Review-before-save screen | 1 | ✅ Built | `/upload/preview` saves nothing and returns a signed, 1-hour token carrying the parsed rows; `/upload/commit` takes the token + per-merchant corrections. Duplicates shown greyed, uncategorised flagged |
-| Rules + fuzzy categorisation | 1 | ✅ Built | ~17 seed rules (PRD target ~100); `rapidfuzz` threshold 88 |
+| Rules + fuzzy categorisation | 1 | ✅ Built | ~45 seed merchants, `rapidfuzz` (88), then trade keywords ("MEDICALS" → Health, "KIRANA" → Groceries…). Most real UPI payees are local shops under a personal name, which no rule can know, so Review groups uncategorised payees for one-click categorising |
 | Duplicate detection | 1 | ✅ Built | See duplicate key in §5 |
 | Dashboard daily/monthly/yearly + KPIs, donut, top merchants | 1 | ✅ Built | |
 | Transactions date-range + search + category filter | 2 | ✅ Built | |
@@ -193,7 +193,6 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 - No migrations yet (tables come from `create_all`). Schema changes need the local `khaata.db` deleted; add Alembic before real data matters.
 - Byte-identical transactions on the same day dedupe into one.
 - Real SBI statements drop the `@handle` from UPI IDs, so person-vs-merchant is a guess: a 10-digit phone-number VPA is a person, anything else a merchant. Small payments to shopkeepers' phone-number VPAs land in Transfer · Person (excluded from spend) until recategorised.
-- The chart palette in `DESIGN.md` has no colours for Income, Investments, Bank Fees, Cashback or Transfer · Person.
 
 **Open questions**
 

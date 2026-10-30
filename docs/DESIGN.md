@@ -39,9 +39,23 @@ Defined in `frontend/src/styles.css` as CSS variables.
 | Groceries | `#4F9D3A` |
 | Entertainment | `#D4477E` |
 | Transport | `#7C4DE2` |
+| Health & Medical | `#C23B4E` |
+| Fuel | `#8C5A3C` |
+| Travel | `#2F8FB8` |
+| Personal Care | `#C98A12` |
+| Education | `#2D4E8F` |
+| Rent & Housing | `#6E7A2E` |
 | Insurance | `#B08A2E` |
-| Transfers / Cash | `#8A9099` |
+| Cash | `#8A9099` |
+| Bank Fees | `#6B7280` |
+| Investments | `#2F6F5E` |
+| Income | `#0E7C66` |
+| Cashback | `#9A7BC4` |
+| Transfer · Person | `#A3A7AE` |
 | Uncategorised | `#B0B4BB` |
+
+The palette lives in `frontend/src/categories.jsx`; keep it in step with `CATEGORIES` in
+`backend/app/extractor.py`.
 
 **Type:** `Space Grotesk` (600) for headings and all figures; `Inter` for body/UI.
 Numbers use tabular figures (`font-variant-numeric: tabular-nums`).

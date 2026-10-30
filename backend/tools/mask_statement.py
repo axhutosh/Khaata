@@ -1,6 +1,7 @@
 """Mask a real bank statement so its layout can be shared without personal data.
 
     python tools/mask_statement.py samples/real/statement.pdf
+    python tools/mask_statement.py samples/real/statement.xlsx    (also .xls)
 
 Prompts for the PDF password (never stored, never echoed). Writes, next to the PDF:
   <name>.masked.json  - what the extractor sees: per page, the text lines, the tables
@@ -29,6 +30,9 @@ import sys
 
 import pdfplumber
 import pikepdf
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+from app import extractor  # noqa: E402  (spreadsheet reader)
 
 # Layout and transaction-type words SBI statements use. Case-insensitive.
 LAYOUT_WORDS = """
@@ -143,6 +147,20 @@ def main() -> int:
     args = ap.parse_args()
 
     data = args.pdf.read_bytes()
+    extra = {w.strip().lower() for w in args.keep.split(",") if w.strip()}
+    m = Masker(set(LAYOUT_WORDS) | set(BUSINESS_WORDS) | extra)
+
+    if data[:5] != b"%PDF-":  # spreadsheet: dump every raw row, so the real columns show
+        try:
+            rows = extractor.sheet_rows(data)
+        except Exception as e:
+            print(f"Couldn't read this file: {e}", file=sys.stderr)
+            return 1
+        masked = [[m.text(c) for c in r] for r in rows]
+        pages = [{"number": 1, "kind": "sheet", "size": None, "lines": [" | ".join(r) for r in masked],
+                  "tables": [masked], "words": []}]
+        return write(args.pdf, pages, m)
+
     password = ""
     try:
         pikepdf.open(io.BytesIO(data)).close()
@@ -157,9 +175,6 @@ def main() -> int:
         return 1
     del password
 
-    extra = {w.strip().lower() for w in args.keep.split(",") if w.strip()}
-    m = Masker(set(LAYOUT_WORDS) | set(BUSINESS_WORDS) | extra)
-
     pages = []
     with pdfplumber.open(io.BytesIO(buf.getvalue())) as pdf:
         for page in pdf.pages:
@@ -173,7 +188,11 @@ def main() -> int:
                            "top": round(w["top"], 1)} for w in page.extract_words()],
             })
 
-    stem = args.pdf.with_suffix("")
+    return write(args.pdf, pages, m)
+
+
+def write(src: pathlib.Path, pages: list, m: Masker) -> int:
+    stem = src.with_suffix("")
     json_path = stem.with_name(stem.name + ".masked.json")
     txt_path = stem.with_name(stem.name + ".masked.txt")
     json_path.write_text(json.dumps({"source": "masked", "pages": pages}, ensure_ascii=False, indent=1),
