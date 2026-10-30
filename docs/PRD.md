@@ -167,7 +167,8 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | Requirement | Phase | Status | Notes |
 | --- | --- | --- | --- |
 | Email/password login + session | 1 | ✅ Built | Single seeded user from `.env` |
-| Google sign-in | 1 | ❌ Not built | |
+| Google sign-in | 1 | ✅ Built | Google Identity Services button → backend verifies the ID token with `google-auth`; allow-listed, verified emails only; links the Google account (`users.google_sub`). Needs `GOOGLE_CLIENT_ID` from Google Cloud Console |
+| API authentication & hardening | — | ✅ Built | Session required on every non-sign-in route (router-level, test walks all routes); fresh session on sign-in; HttpOnly/SameSite cookie, Secure in production, 7-day expiry; CSRF origin check; login throttling; constant-time-ish failure; upload size cap; security headers; docs off and unsafe defaults refused in production |
 | Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7). PDF or SBI's Excel download (.xlsx, .xls, or HTML/TSV saved as .xls; columns found by header name). Excel path untested against a real SBI file yet; password-protected Excel not supported |
 | SBI extractor (table read + narration normaliser) | 1 | 🟡 Partial | Fitted to a real SBI statement (Jan 2026, masked): 57/57 rows, reconciles to ₹0.00 against the Statement Summary. That statement held only UPI rows; NEFT/IMPS/ATM/ACH/charges/interest in the real layout are still untested |
 | Balance check | 1 | ✅ Built | |

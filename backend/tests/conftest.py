@@ -22,7 +22,19 @@ PASSWORD = "ASHUT1947"
 
 
 @pytest.fixture
+def anon():
+    """A client with a fresh database and no session."""
+    from app.security import login_throttle
+    login_throttle.reset()
+    Base.metadata.drop_all(engine)
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
 def client():
+    from app.security import login_throttle
+    login_throttle.reset()
     Base.metadata.drop_all(engine)
     with TestClient(app) as c:  # lifespan recreates tables and seeds the user
         assert c.post("/auth/login", json={"email": "me@khaata.in", "password": "pw"}).status_code == 200

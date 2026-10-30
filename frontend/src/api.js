@@ -10,14 +10,20 @@ async function req(path, opts = {}) {
     ...opts,
   });
   if (!res.ok) {
+    // a data call that comes back 401 means the session ended: go sign in again
+    if (res.status === 401 && !path.startsWith("/auth/") && location.pathname !== "/login") {
+      location.assign("/login?expired=1");
+    }
     const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${res.status})`);
+    throw new Error(typeof detail.detail === "string" ? detail.detail : `Request failed (${res.status})`);
   }
   return res.status === 204 ? null : res.json();
 }
 
 export const api = {
   me: () => req("/auth/me"),
+  authConfig: () => req("/auth/config"),
+  google: (credential) => req("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   login: (email, password) =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req("/auth/logout", { method: "POST" }),

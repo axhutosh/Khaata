@@ -35,7 +35,9 @@ decision in the PRD, flag it rather than silently diverging.
   - `app/models.py` — `User`, `Upload`, `Transaction`, `MerchantRule`, `Budget`.
   - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply), `reclassify()` saved rows.
   - `app/names.py` — person-vs-business signals (first names, surnames, business words, merchant-VPA hints) for P2P detection.
-  - `app/routers/` — auth, upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
+  - `app/security.py` — security headers, CSRF origin check, login throttle. `app/auth.py` — sessions, password checks.
+  - `app/routers/` — auth (password + Google), upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
+    **New routers go under `dependencies=[Depends(current_user)]` in `main.py`**; `tests/test_security.py` fails any route that answers without a session.
   - `tests/` — pytest against the sample PDFs; run `python -m pytest` from `backend/`.
 - `frontend/` — Vite + React. API client in `src/api.js` (proxied `/api` → backend).
   Pages in `src/pages/`, shared shell in `src/components/Shell.jsx`, tokens in `src/styles.css`.

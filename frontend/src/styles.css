@@ -30,6 +30,7 @@ a:hover { color: var(--accent-dark); }
 }
 .btn:hover { background: var(--accent-dark); }
 .btn-dark { background: var(--ink); }
+.btn-dark:hover { background: #2b2f37; color: #fff; }
 .btn-ghost { background: #fff; border: 1px solid #d9d7cf; color: var(--ink); }
 .input {
   width: 100%; font-size: 15px; color: var(--ink); background: #fff;

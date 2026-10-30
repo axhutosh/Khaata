@@ -40,7 +40,10 @@ async def preview(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    data = await file.read()
+    limit = settings.MAX_UPLOAD_MB * 1024 * 1024
+    data = await file.read(limit + 1)  # never hold more than the limit in memory
+    if len(data) > limit:
+        raise HTTPException(status_code=413, detail=f"That file is over {settings.MAX_UPLOAD_MB} MB. Try a shorter date range.")
     try:
         layout = extractor.load_statement(data, password)
     except extractor.WrongPassword as e:
