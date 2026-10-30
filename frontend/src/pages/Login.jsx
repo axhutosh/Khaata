@@ -8,16 +8,16 @@ const GIS_SRC = "https://accounts.google.com/gsi/client";
 // signed ID token to the backend (which verifies it). No Google secrets live in the browser.
 function useGoogleButton(clientId, onCredential) {
   const el = useRef(null);
-  const [ready, setReady] = useState(false);
+  const [state, setState] = useState("loading"); // loading | ready | failed
   useEffect(() => {
     if (!clientId) return;
     const render = () => {
-      if (!window.google?.accounts?.id || !el.current) return;
+      if (!window.google?.accounts?.id || !el.current) return setState("failed");
       window.google.accounts.id.initialize({ client_id: clientId, callback: (r) => onCredential(r.credential),
         ux_mode: "popup", auto_select: false, itp_support: true });
-      window.google.accounts.id.renderButton(el.current, { theme: "outline", size: "large", shape: "rectangular",
-        text: "continue_with", width: el.current.offsetWidth || 360, logo_alignment: "left" });
-      setReady(true);
+      window.google.accounts.id.renderButton(el.current, { theme: "filled_black", size: "large", shape: "pill",
+        text: "continue_with", width: Math.min(el.current.offsetWidth || 340, 400), logo_alignment: "left" });
+      setState("ready");
     };
     if (window.google?.accounts?.id) return render();
     let s = document.querySelector(`script[src="${GIS_SRC}"]`);
@@ -25,43 +25,37 @@ function useGoogleButton(clientId, onCredential) {
       s = Object.assign(document.createElement("script"), { src: GIS_SRC, async: true, defer: true });
       document.head.appendChild(s);
     }
+    const fail = () => setState("failed");
     s.addEventListener("load", render);
-    return () => s.removeEventListener("load", render);
+    s.addEventListener("error", fail);
+    return () => { s.removeEventListener("load", render); s.removeEventListener("error", fail); };
   }, [clientId]);
-  return { el, ready };
+  return { el, state };
 }
 
 const PROMISES = [
   ["Reads locked PDFs and Excel", "Your statement password is used once to unlock the file, then forgotten."],
-  ["Daily, monthly, yearly", "See where money goes — shops, people, subscriptions — balance-checked to the paisa."],
-  ["Yours alone", "Single-user, signed-in access to every number. Nothing is shared."],
+  ["Daily, monthly, yearly", "Shops, people, subscriptions — every statement balance-checked to the paisa."],
+  ["Private by design", "Sign in with Google only. No passwords stored, nothing shared."],
 ];
 
 export default function Login() {
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [err, setErr] = useState(params.get("expired") ? "Your session ended. Please sign in again." : "");
   const [busy, setBusy] = useState(false);
-  const [clientId, setClientId] = useState(null);
+  const [clientId, setClientId] = useState(undefined); // undefined = still asking the server
 
-  useEffect(() => { api.authConfig().then((c) => setClientId(c.google_client_id)).catch(() => {}); }, []);
-
-  const done = (me) => nav(me.onboarded ? "/" : "/upload", { replace: true });
+  useEffect(() => { api.authConfig().then((c) => setClientId(c.google_client_id)).catch(() => setClientId(null)); }, []);
 
   const onGoogle = async (credential) => {
     setBusy(true); setErr("");
-    try { done(await api.google(credential)); } catch (e) { setErr(e.message); setBusy(false); }
+    try {
+      const me = await api.google(credential);
+      nav(me.onboarded ? "/" : "/upload", { replace: true });
+    } catch (e) { setErr(e.message); setBusy(false); }
   };
-  const { el: googleEl } = useGoogleButton(clientId, onGoogle);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true); setErr("");
-    try { done(await api.login(email.trim(), password)); }
-    catch (e) { setErr(e.message); setPassword(""); setBusy(false); }
-  };
+  const { el, state } = useGoogleButton(clientId, onGoogle);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", flexWrap: "wrap" }}>
@@ -91,34 +85,38 @@ export default function Login() {
 
       <div style={{ flex: "1 1 460px", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
         <div style={{ width: "100%", maxWidth: 360 }}>
-          <h2 className="grotesk" style={{ fontSize: 26, margin: "0 0 6px" }}>Welcome back</h2>
-          <p style={{ color: "var(--muted)", fontSize: 14.5, margin: "0 0 26px" }}>Sign in to your Khaata</p>
+          <h2 className="grotesk" style={{ fontSize: 26, margin: "0 0 6px" }}>Welcome to Khaata</h2>
+          <p style={{ color: "var(--muted)", fontSize: 14.5, margin: "0 0 26px", lineHeight: 1.55 }}>
+            Sign in with your Google account to continue.
+          </p>
 
           {err && <div className="notice notice-error" role="alert" style={{ marginBottom: 18 }}>{err}</div>}
 
-          {clientId && (
+          {clientId === null ? (
+            <div className="notice notice-error" role="alert">
+              Sign-in isn't set up yet: add <code>GOOGLE_CLIENT_ID</code> to <code>backend/.env</code> and restart the backend.
+            </div>
+          ) : (
             <>
-              <div ref={googleEl} style={{ width: "100%", minHeight: 44, display: "flex", justifyContent: "center" }}
-                aria-label="Sign in with Google" />
-              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "22px 0", color: "var(--faint)", fontSize: 12.5 }}>
-                <span style={{ flex: 1, height: 1, background: "var(--line)" }} />or with email<span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-              </div>
+              <div ref={el} aria-label="Continue with Google"
+                style={{ width: "100%", minHeight: 44, display: "flex", justifyContent: "center", opacity: busy ? 0.5 : 1,
+                  pointerEvents: busy ? "none" : "auto" }} />
+              {(clientId === undefined || state === "loading") && (
+                <p style={{ textAlign: "center", color: "var(--faint)", fontSize: 13.5, margin: "10px 0 0" }}>Loading Google sign-in…</p>
+              )}
+              {state === "failed" && (
+                <div className="notice notice-error" role="alert" style={{ marginTop: 12 }}>
+                  Couldn't load Google sign-in. Check your connection or ad blocker, then reload the page.
+                </div>
+              )}
+              {busy && <p style={{ textAlign: "center", color: "var(--muted)", fontSize: 13.5, margin: "12px 0 0" }}>Signing you in…</p>}
             </>
           )}
 
-          <form onSubmit={submit}>
-            <label htmlFor="email" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 7 }}>Email</label>
-            <input id="email" className="input" type="email" autoComplete="username" required value={email}
-              onChange={(e) => setEmail(e.target.value)} style={{ marginBottom: 18 }} />
-
-            <label htmlFor="password" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 7 }}>Password</label>
-            <input id="password" className="input" type="password" autoComplete="current-password" required value={password}
-              onChange={(e) => setPassword(e.target.value)} style={{ marginBottom: 24 }} />
-
-            <button className="btn" style={{ width: "100%", minHeight: 46 }} type="submit" disabled={busy}>
-              {busy ? <><span className="spinner" aria-hidden="true" /> Signing in…</> : "Sign in"}
-            </button>
-          </form>
+          <p style={{ fontSize: 12.5, color: "var(--faint)", margin: "28px 0 0", lineHeight: 1.6 }}>
+            Khaata is private: only Google accounts the owner has allowed can sign in. Google shares just
+            your name and email — never your Google password.
+          </p>
         </div>
       </div>
     </div>

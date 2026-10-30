@@ -42,7 +42,7 @@ khaata-app/
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt   # app deps + pytest
-cp .env.example .env            # edit SEED_EMAIL / SEED_PASSWORD / SECRET_KEY
+cp .env.example .env            # set SECRET_KEY, SEED_EMAIL and GOOGLE_CLIENT_ID
 uvicorn app.main:app --reload --reload-dir app   # http://localhost:8000  (docs at /docs)
 ```
 
@@ -70,7 +70,7 @@ change, delete `backend/khaata.db` and restart.
 
 ## Try the flow
 
-1. Open http://localhost:5173 and sign in with your seed email/password.
+1. Open http://localhost:5173 and continue with Google (set up below under Security).
 2. Upload `backend/samples/SBI_sample_locked.pdf` — password **`ASHUT1947`**.
 3. Review the parsed rows (balance check banner, categories, duplicates) and fix any category —
    nothing is saved until **Looks good — save**. Then land on the Dashboard.
@@ -80,25 +80,20 @@ change, delete `backend/khaata.db` and restart.
 
 ## Security
 
-- **Every API needs a session** except sign-in (`/auth/login`, `/auth/google`, `/auth/config`,
-  `/auth/logout`) and `/health`. Enforced per router in `app/main.py` and checked by a test that
+- **Sign-in is Google only.** There are no passwords to guess, reuse or leak; only verified,
+  allow-listed Google accounts get in.
+- **Every API needs a session** except sign-in (`/auth/google`, `/auth/config`, `/auth/logout`)
+  and `/health`. Enforced per router in `app/main.py` and checked by a test that
   walks every route.
 - **Session**: signed, HttpOnly, SameSite=Lax cookie (`khaata_session`), 7 days by default;
   `Secure` (HTTPS-only) in production. Signing in starts a fresh session.
 - **Cross-site requests**: writes from an origin outside `CORS_ORIGINS` are refused (CSRF).
-- **Passwords**: PBKDF2; 5 failed attempts per email (20 per IP) in 15 minutes locks sign-in
-  for the rest of the window. Unknown emails and wrong passwords look identical.
+- **Throttling**: 5 failed Google sign-ins from one address in 15 minutes pauses sign-in from
+  that address for the rest of the window (other addresses, including yours, are unaffected).
 - **Uploads**: capped at `MAX_UPLOAD_MB`; the statement password is used once and never stored.
 - **Responses**: `no-store`, `nosniff`, `DENY` framing, a locked-down CSP. `/docs` is off in production.
-- **Production** (`ENV=production`) refuses to start with the placeholder `SECRET_KEY`, the
-  default seed password, or non-HTTPS cookies.
-
-To change your password (the seed only applies when the account is first created):
-
-```bash
-cd backend
-python tools/set_password.py you@email.com
-```
+- **Production** (`ENV=production`) refuses to start with the placeholder `SECRET_KEY`, no
+  `GOOGLE_CLIENT_ID`, or non-HTTPS cookies.
 
 ### Google sign-in
 
@@ -106,10 +101,11 @@ python tools/set_password.py you@email.com
    create an **OAuth client ID**, type **Web application**.
 2. Under **Authorized JavaScript origins** add `http://localhost:5173` (and your real domain later).
    No redirect URI is needed.
-3. Put the client ID in `backend/.env` as `GOOGLE_CLIENT_ID=…apps.googleusercontent.com` and
-   list who may sign in in `ALLOWED_EMAILS` (defaults to `SEED_EMAIL`). Restart the backend.
+3. Put the client ID in `backend/.env` as `GOOGLE_CLIENT_ID=…apps.googleusercontent.com`, set
+   `SEED_EMAIL` to your Gmail address, and list who may sign in in `ALLOWED_EMAILS` (defaults to
+   `SEED_EMAIL`). Restart the backend.
 
-The login page then shows "Continue with Google". The backend verifies Google's signed ID token
+The login page shows "Continue with Google" — the only way in. The backend verifies Google's signed ID token
 (signature, audience, expiry, verified email) and only lets allow-listed emails in; the first
 Google sign-in links that Google account to the user, and a different Google account for the
 same email is refused.

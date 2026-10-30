@@ -25,6 +25,32 @@ const Icon = {
   ),
 };
 
+const COMING_SOON = ["HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak", "Bank of Baroda", "PNB"];
+
+function Banks() {
+  return (
+    <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }} aria-label="Supported banks">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", marginRight: 2 }}>Supported bank</span>
+        <span className="pill" style={{ background: "#ecf6f1", color: "#0a5f4e", fontSize: 12.5, padding: "5px 11px",
+          display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span aria-hidden="true">{Icon.check}</span>State Bank of India (SBI)
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--faint)", marginRight: 4 }}>Coming soon</span>
+        {COMING_SOON.map((b) => (
+          <span key={b} className="pill" style={{ background: "#f4f3ee", color: "var(--faint)", fontWeight: 500,
+            border: "1px dashed #d9d7cf" }}>{b}</span>
+        ))}
+      </div>
+      <p style={{ fontSize: 12.5, color: "var(--faint)", margin: "10px 0 0" }}>
+        Only SBI statements are read correctly for now — other banks' files won't parse yet.
+      </p>
+    </div>
+  );
+}
+
 const kindOf = (name) => (/\.xlsx?$/i.test(name) ? "XLS" : "PDF");
 const sizeOf = (b) => (b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB");
 
@@ -225,6 +251,8 @@ export default function Upload() {
               Download it from SBI (net banking or YONO) as PDF or Excel. Khaata reads it, checks every rupee
               adds up, and lets you review before anything is saved.
             </p>
+
+            <Banks />
 
             <div className="card" style={{ padding: 24 }}>
               {file ? <FileChip file={file} onChange={reset} disabled={busy} /> : <DropZone onFile={choose} />}

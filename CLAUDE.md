@@ -21,6 +21,8 @@ decision in the PRD, flag it rather than silently diverging.
 
 - Store transactions in a DB (history across uploads powers daily/monthly/yearly).
 - User types the statement password; used once to decrypt, **never stored**. No PAN/DOB auto-guessing in v1.
+- **Sign-in is Google only** (no email/password, no sign-up); allow-listed emails via `ALLOWED_EMAILS`.
+- The UI says **SBI only**, other banks "coming soon" (Upload page).
 - SIP → **Investments** (excluded from spend); EMIs → spend (Bills/Loan). Both show under recurring.
 - Daily/Monthly/Yearly toggle is on the **Dashboard only**; Transactions uses date-range + search.
 - Upload is a **one-time onboarding** step; returning users land on the Dashboard.
@@ -35,8 +37,8 @@ decision in the PRD, flag it rather than silently diverging.
   - `app/models.py` — `User`, `Upload`, `Transaction`, `MerchantRule`, `Budget`.
   - `app/rules.py` — merchant rules: load a user's rules, `learn()` a correction (write rule + retro-apply), `reclassify()` saved rows.
   - `app/names.py` — person-vs-business signals (first names, surnames, business words, merchant-VPA hints) for P2P detection.
-  - `app/security.py` — security headers, CSRF origin check, login throttle. `app/auth.py` — sessions, password checks.
-  - `app/routers/` — auth (password + Google), upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
+  - `app/security.py` — security headers, CSRF origin check, login throttle. `app/auth.py` — sessions.
+  - `app/routers/` — auth (Google only), upload (`/preview` + `/commit`), uploads (list/delete), transactions, insights, budgets.
     **New routers go under `dependencies=[Depends(current_user)]` in `main.py`**; `tests/test_security.py` fails any route that answers without a session.
   - `tests/` — pytest against the sample PDFs; run `python -m pytest` from `backend/`.
 - `frontend/` — Vite + React. API client in `src/api.js` (proxied `/api` → backend).

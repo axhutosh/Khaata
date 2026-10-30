@@ -24,8 +24,6 @@ export const api = {
   me: () => req("/auth/me"),
   authConfig: () => req("/auth/config"),
   google: (credential) => req("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
-  login: (email, password) =>
-    req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req("/auth/logout", { method: "POST" }),
 
   preview: (file, password) => {

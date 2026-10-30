@@ -24,13 +24,12 @@ class Settings:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-change-me")
     CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 
-    # Seed single user (solo v1). Change in .env.
+    # The owner's account (solo v1): created at startup, signed in to with Google.
     SEED_EMAIL: str = os.getenv("SEED_EMAIL", "you@email.com")
-    SEED_PASSWORD: str = os.getenv("SEED_PASSWORD", "password")
 
-    # Google sign-in (Google Identity Services). Empty = the Google button is hidden.
+    # Google sign-in (Google Identity Services) is the only way in. Required.
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    # Who may sign in with Google. Solo v1: defaults to the seed email only.
+    # Who may sign in. Solo v1: defaults to the seed email only.
     ALLOWED_EMAILS: set[str] = {e.strip().lower() for e in
                                 os.getenv("ALLOWED_EMAILS", os.getenv("SEED_EMAIL", "you@email.com")).split(",")
                                 if e.strip()}
@@ -43,15 +42,14 @@ class Settings:
     def production(self) -> bool:
         return self.ENV == "production"
 
-    def check(self, weak_password_users: list[str] = ()) -> None:
+    def check(self) -> None:
         """Refuse unsafe defaults in production; warn about them in development."""
         problems = []
         if self.SECRET_KEY in PLACEHOLDER_SECRETS or len(self.SECRET_KEY) < 32:
             problems.append("SECRET_KEY is a placeholder or shorter than 32 characters "
                             "(generate one: python -c \"import secrets; print(secrets.token_urlsafe(48))\")")
-        if weak_password_users:
-            problems.append(f"{', '.join(weak_password_users)} still signs in with the default or a short password "
-                            "(change it: python tools/set_password.py <email>)")
+        if not self.GOOGLE_CLIENT_ID:
+            problems.append("GOOGLE_CLIENT_ID is empty, so nobody can sign in (see README: Google sign-in)")
         if self.production and not self.SESSION_SECURE:
             problems.append("SESSION_SECURE must be on in production (cookies over HTTPS only)")
         if problems and self.production:

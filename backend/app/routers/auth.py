@@ -1,18 +1,16 @@
+"""Sign-in is Google only (Google Identity Services). There are no passwords to guess or leak."""
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import User
-from ..auth import verify_password, current_user, login_user
+from ..auth import current_user, login_user
 from ..security import login_throttle, client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-class LoginIn(BaseModel):
-    email: EmailStr
-    password: str = Field(max_length=256)
+NO_PASSWORD = "!google-only"  # stored in users.password_hash: there is no password sign-in
 
 
 class GoogleIn(BaseModel):
@@ -29,19 +27,6 @@ def config():
     return {"google_client_id": settings.GOOGLE_CLIENT_ID or None}
 
 
-@router.post("/login")
-def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
-    email, ip = body.email.lower(), client_ip(request)
-    login_throttle.check(ip, email)
-    user = db.query(User).filter(User.email == email).first()
-    if not verify_password(body.password, user.password_hash if user else None):
-        login_throttle.fail(ip, email)
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    login_throttle.succeed(email)
-    login_user(request, user)
-    return _me(user)
-
-
 def verify_google_token(credential: str) -> dict:
     """Check the ID token's signature, issuer, audience and expiry with Google's library."""
     from google.auth.transport import requests as google_requests
@@ -53,12 +38,14 @@ def verify_google_token(credential: str) -> dict:
 def google(body: GoogleIn, request: Request, db: Session = Depends(get_db)):
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=404, detail="Google sign-in isn't configured.")
+    # throttle per address, so someone else's failed attempts can't lock the owner out
     ip = client_ip(request)
-    login_throttle.check(ip, "google")
+    key = f"google:{ip}"
+    login_throttle.check(ip, key)
     try:
         claims = verify_google_token(body.credential)
     except ValueError:
-        login_throttle.fail(ip, "google")
+        login_throttle.fail(ip, key)
         raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
 
     email = (claims.get("email") or "").lower()
@@ -69,12 +56,13 @@ def google(body: GoogleIn, request: Request, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.email == email).first()
     if user is None:  # an allow-listed email signing in for the first time
-        user = User(email=email, password_hash="!google-only")
+        user = User(email=email, password_hash=NO_PASSWORD)
         db.add(user)
     if user.google_sub and user.google_sub != claims["sub"]:
         raise HTTPException(status_code=403, detail="This email is linked to a different Google account.")
     user.google_sub = claims["sub"]
     db.commit()
+    login_throttle.succeed(key)
     login_user(request, user)
     return _me(user)
 

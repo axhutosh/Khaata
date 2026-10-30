@@ -7,9 +7,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .database import Base, engine, SessionLocal
 from .models import User
-from .auth import current_user, hash_password, verify_password
+from .auth import current_user
 from .security import OriginCheck, SecurityHeaders
 from .routers import auth, upload, uploads, transactions, insights, budgets
+from .routers.auth import NO_PASSWORD
 
 
 def seed_user():
@@ -17,7 +18,7 @@ def seed_user():
     try:
         email = settings.SEED_EMAIL.lower()
         if not db.query(User).filter(User.email == email).first():
-            db.add(User(email=email, password_hash=hash_password(settings.SEED_PASSWORD)))
+            db.add(User(email=email, password_hash=NO_PASSWORD))
             db.commit()
     finally:
         db.close()
@@ -32,18 +33,8 @@ def migrate_data():
         if "google_sub" not in {c["name"] for c in inspect(conn).get_columns("users")}:
             conn.execute(text("ALTER TABLE users ADD COLUMN google_sub VARCHAR"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"))
-
-
-def weak_password_users() -> list[str]:
-    """Accounts whose real (stored) password is a default or too short to be safe.
-    SEED_PASSWORD only matters when the account is first created, so check the database."""
-    weak = [settings.SEED_PASSWORD] if len(settings.SEED_PASSWORD) < 10 else []
-    db = SessionLocal()
-    try:
-        return [u.email for u in db.query(User).all()
-                if any(verify_password(pw, u.password_hash) for pw in ("password", *weak))]
-    finally:
-        db.close()
+        # sign-in is Google only: drop any stored password hash so no password route exists
+        conn.execute(text("UPDATE users SET password_hash = :p WHERE password_hash != :p"), {"p": NO_PASSWORD})
 
 
 @asynccontextmanager
@@ -51,7 +42,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_data()
     seed_user()
-    settings.check(weak_password_users())
+    settings.check()
     yield
 
 

@@ -18,7 +18,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 
 **In scope**
 
-- Email/password + Google sign-in; single user with their own session.
+- Google sign-in (only); single user with their own session.
 - Upload bank-statement PDFs, including password-protected (user enters the password).
 - Decrypt, extract transactions, balance-check, store in a database.
 - Review screen to fix mis-categorised rows before saving.
@@ -39,7 +39,7 @@ Khaata turns a bank-statement PDF into a clear picture of where money goes. The 
 
 **One-time onboarding** (first run only; Upload lives here, not in the main nav):
 
-1. Sign in (email/password or Google).
+1. Sign in with Google.
 2. Upload a statement PDF — ideally several months in one file.
 3. If the PDF is locked, enter its password; Khaata decrypts in memory.
 4. Khaata extracts transactions and runs the balance check.
@@ -58,7 +58,7 @@ Six screens, matching the approved designs (see `DESIGN.md`).
 
 | Screen | Purpose | Key requirements |
 | --- | --- | --- |
-| Login | Authenticate | Email/password + Google; session cookie; first-run users → onboarding, returning users → Dashboard |
+| Login | Authenticate | Google sign-in only; session cookie; first-run users → onboarding, returning users → Dashboard |
 | Onboarding: Upload & Unlock | Get the statement in | Drag/drop PDF; detect encryption; password field with bank-specific hint; decrypt in memory; wrong-password retry; accept multiple files |
 | Review | Trust the data | Parsed table (date, merchant, raw narration, category, amount); balance-check banner (opening + credits − debits = closing); flag uncategorised rows; inline category edit; save all |
 | Dashboard | The insights home | Daily/Monthly/Yearly toggle; KPIs (income, spent, saved, daily avg); income-vs-spend trend; category donut; top merchants; "what Khaata noticed" alerts |
@@ -140,6 +140,7 @@ Since it's one user, the merchant set is small and repetitive, so the dictionary
 **Locked decisions**
 
 - **Storage:** yes — transactions are stored so daily/monthly/yearly history works across uploads.
+- **Sign-in (decided 2026-10-31):** Google sign-in only — no email/password, no sign-up. Only verified emails on `ALLOWED_EMAILS` get in; the owner's account is `SEED_EMAIL`. Public sign-up stays a later decision.
 - **Password handling:** user types the statement password; used once to decrypt, never stored. No auto-guessing from PAN/DOB in v1.
 - **SIP vs EMI:** SIPs count as **Investments** (wealth, excluded from spend so savings rate stays honest); EMIs count as spend under Bills/Loan. Both still appear under recurring.
 - **Time toggle:** Daily/Monthly/Yearly lives on the Dashboard only; Transactions uses a date-range filter instead.
@@ -166,7 +167,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 
 | Requirement | Phase | Status | Notes |
 | --- | --- | --- | --- |
-| Email/password login + session | 1 | ✅ Built | Single seeded user from `.env` |
+| Email/password login | — | ❌ Removed | Dropped 2026-10-31 by decision: Google sign-in only (§7) |
 | Google sign-in | 1 | ✅ Built | Google Identity Services button → backend verifies the ID token with `google-auth`; allow-listed, verified emails only; links the Google account (`users.google_sub`). Needs `GOOGLE_CLIENT_ID` from Google Cloud Console |
 | API authentication & hardening | — | ✅ Built | Session required on every non-sign-in route (router-level, test walks all routes); fresh session on sign-in; HttpOnly/SameSite cookie, Secure in production, 7-day expiry; CSRF origin check; login throttling; constant-time-ish failure; upload size cap; security headers; docs off and unsafe defaults refused in production |
 | Upload + decrypt (password once, never stored) | 1 | ✅ Built | One file per upload (decided, §7). PDF or SBI's Excel download (.xlsx, .xls, or HTML/TSV saved as .xls; columns found by header name). Excel path untested against a real SBI file yet; password-protected Excel not supported |
@@ -187,7 +188,7 @@ Verified against a **synthetic** SBI statement only (`backend/samples/SBI_sample
 | Delete an upload and its rows | — | ✅ Built | `DELETE /uploads/{id}`; resets onboarding if no history is left |
 | Automated tests | — | ✅ Started | `backend/tests/` — extractor, preview/commit, dedupe, corrections, delete, budgets (pytest, sample PDFs) |
 
-**API surface today:** `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` · `POST /upload/preview`, `POST /upload/commit` · `GET /uploads`, `DELETE /uploads/{id}` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets?month=YYYY-MM`, `PUT /budgets` · `GET /health`.
+**API surface today:** `GET /auth/config`, `POST /auth/google`, `POST /auth/logout`, `GET /auth/me` · `POST /upload/preview`, `POST /upload/commit` · `GET /uploads`, `DELETE /uploads/{id}` · `GET /transactions`, `PATCH /transactions/{id}/category` · `GET /insights/overview?period=day|month|year`, `GET /insights/recurring` · `GET /budgets?month=YYYY-MM`, `PUT /budgets` · `GET /health`.
 
 **Known issues**
 
