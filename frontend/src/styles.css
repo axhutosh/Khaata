@@ -74,7 +74,7 @@ a:hover { color: var(--accent-dark); }
   .sidebar { position: sticky; top: 0; height: auto; width: 100%; flex: none; flex-direction: row; align-items: center;
     gap: 6px; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--line); overflow-x: auto; }
   .sidebar-brand { padding: 0 8px 0 2px; }
-  .sidebar-brand span { display: none; }
+  .sidebar-brand .grotesk { display: none; }
   .sidebar-nav { flex-direction: row; flex: 1; }
   .nav { padding: 8px 10px; white-space: nowrap; }
   .nav.on::before { display: none; }
@@ -82,11 +82,6 @@ a:hover { color: var(--accent-dark); }
   .sidebar-upload { width: auto; padding: 9px 12px; }
   .sidebar-upload span, .sidebar-email, .sidebar-avatar { display: none; }
   .main { padding: 22px 16px 48px; }
-}
-.logo-mark {
-  width: 30px; height: 30px; border-radius: 8px; background: var(--accent);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-  font-family: "Space Grotesk"; font-weight: 700; font-size: 16px;
 }
 .pill { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
 .kpi-label { font-size: 12.5px; color: var(--faint); font-weight: 500; margin-bottom: 10px; }

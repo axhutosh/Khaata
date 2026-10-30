@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import Logo from "../components/Logo";
 
 const GIS_SRC = "https://accounts.google.com/gsi/client";
 
@@ -62,9 +63,8 @@ export default function Login() {
       <div style={{ flex: "1 1 460px", background: "#16181d", color: "#f7f6f2", padding: "56px 48px",
         display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ maxWidth: 420 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 40 }}>
-            <div className="logo-mark">K</div>
-            <span className="grotesk" style={{ fontWeight: 600, fontSize: 21 }}>Khaata</span>
+          <div style={{ marginBottom: 40 }}>
+            <Logo size={38} text={23} onDark />
           </div>
           <h1 className="grotesk" style={{ fontSize: 38, lineHeight: 1.12, margin: "0 0 16px" }}>
             Every rupee, finally accounted for.

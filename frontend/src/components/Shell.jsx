@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import Logo from "./Logo";
 
 const svg = (d) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
@@ -33,8 +34,7 @@ export default function Shell({ children }) {
     <div className="shell">
       <aside className="sidebar" aria-label="Main">
         <div className="sidebar-brand">
-          <div className="logo-mark">K</div>
-          <span className="grotesk" style={{ fontWeight: 600, fontSize: 19, letterSpacing: "-.01em" }}>Khaata</span>
+          <Logo size={30} text={19} />
         </div>
 
         <nav className="sidebar-nav">

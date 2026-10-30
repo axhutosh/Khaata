@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import Review from "./Review";
+import Logo from "../components/Logo";
 
 const STEPS = ["Upload", "Unlock", "Review", "Insights"];
 const ACCEPT = ".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -224,10 +225,7 @@ export default function Upload() {
     <div style={{ minHeight: "100vh", padding: "28px 20px 56px" }}>
       <div style={{ maxWidth: preview ? 1080 : 600, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="logo-mark">K</div>
-            <span className="grotesk" style={{ fontWeight: 600, fontSize: 19 }}>Khaata</span>
-          </div>
+          <Logo size={30} text={19} />
           {me?.onboarded && <Link to="/" style={{ fontSize: 14, fontWeight: 600 }}>← Back to dashboard</Link>}
         </div>
 
