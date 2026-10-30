@@ -14,5 +14,6 @@ dist/
 # OS
 .DS_Store
 
-# Keep sample PDFs out of version control if they ever contain real data
-# backend/samples/*.pdf
+# Real statements and their masked dumps never get committed.
+# A masked dump becomes a test fixture only after it's been reviewed and copied out.
+backend/samples/real/

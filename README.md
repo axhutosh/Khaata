@@ -78,6 +78,23 @@ change, delete `backend/khaata.db` and restart.
 
 (`SBI_sample.pdf` is the same statement without a password, to test the unlocked path.)
 
+## Sharing a real statement safely
+
+To tune the extractor to a real SBI layout without sharing personal data:
+
+```bash
+cd backend
+.venv\Scriptsctivate
+# put the PDF in backend/samples/real/  (git-ignored)
+python tools/mask_statement.py samples/real/statement.pdf
+```
+
+It asks for the PDF password (not shown, not stored) and writes `statement.masked.txt` and
+`statement.masked.json` next to it. Names, account/reference numbers, UPI IDs, IFSC and address
+become placeholders (`XXXX`, `9999`); dates, amounts, balances, SBI layout words and well-known
+business names stay. **Read the .txt before sharing.** Use `--keep WORD,WORD` to leave more
+business names visible.
+
 ## Decisions baked in (from the PRD)
 
 - **Password:** entered by the user, used once to decrypt, never stored.
